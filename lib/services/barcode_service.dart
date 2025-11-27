@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 import 'dart:ui';
-import 'package:flutter/foundation.dart'; // 需要引用这个以使用 WriteBuffer
+import 'package:flutter/foundation.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 
@@ -30,18 +32,36 @@ class BarcodeService {
     _isProcessing = true;
 
     try {
-      // 1. 将 CameraImage 转换为 ML Kit 需要的 InputImage
-      final inputImage = _inputImageFromCameraImage(
-        image,
-        sensorOrientation,
-        isFrontCamera,
+      // 1. 在 Isolate 中处理图像数据转换 (CPU 密集型)
+      final imageData = await Isolate.run(
+        () => _convertImageInIsolate(
+          image.planes.map((p) => p.bytes).toList(),
+          image.width,
+          image.height,
+          image.format.raw,
+          image.planes[0].bytesPerRow,
+          sensorOrientation,
+          isFrontCamera,
+        ),
       );
-      if (inputImage == null) return null;
 
-      // 2. 处理图片
+      if (imageData == null) return null;
+
+      // 2. 创建 InputImage (必须在主线程)
+      final inputImage = InputImage.fromBytes(
+        bytes: imageData.bytes,
+        metadata: InputImageMetadata(
+          size: Size(imageData.width, imageData.height),
+          rotation: imageData.rotation,
+          format: imageData.format,
+          bytesPerRow: imageData.bytesPerRow,
+        ),
+      );
+
+      // 3. ML Kit 处理 (内部已优化)
       final barcodes = await _barcodeScanner.processImage(inputImage);
 
-      // 3. 返回第一个有效条码
+      // 4. 返回第一个有效条码
       for (final barcode in barcodes) {
         if (barcode.rawValue != null && barcode.rawValue!.trim().isNotEmpty) {
           return barcode.rawValue!.trim();
@@ -59,54 +79,48 @@ class BarcodeService {
     _barcodeScanner.close();
   }
 
-  /// 核心转换逻辑：CameraImage -> InputImage
-  /// 优化点：使用 WriteBuffer 替代 fold，大幅提升性能
-  InputImage? _inputImageFromCameraImage(
-    CameraImage image,
+  /// 在 Isolate 中转换图像数据
+  static _ImageData? _convertImageInIsolate(
+    List<Uint8List> planes,
+    int width,
+    int height,
+    int formatRaw,
+    int bytesPerRow,
     int sensorOrientation,
     bool isFrontCamera,
   ) {
     // 1. 获取图片格式
-    final format = InputImageFormatValue.fromRawValue(image.format.raw);
-
-    // 校验格式支持 (Android: nv21, iOS: bgra8888)
-    // 如果格式不支持，直接返回 null，避免 Crash
+    final format = InputImageFormatValue.fromRawValue(formatRaw);
     if (format == null) return null;
 
-    // 2. 拼接所有平面的字节 (性能优化部分)
-    // 使用 WriteBuffer 避免创建大量临时对象
+    // 2. 拼接所有平面的字节
     final allBytes = WriteBuffer();
-    for (final Plane plane in image.planes) {
-      allBytes.putUint8List(plane.bytes);
+    for (final plane in planes) {
+      allBytes.putUint8List(plane);
     }
     final bytes = allBytes.done().buffer.asUint8List();
 
-    // 3. 获取图片尺寸
-    final size = Size(image.width.toDouble(), image.height.toDouble());
+    // 3. 处理旋转角度
+    final rotation = _getImageRotation(sensorOrientation, isFrontCamera);
+    if (rotation == null) return null;
 
-    // 4. 处理旋转角度
-    final imageRotation = _getImageRotation(sensorOrientation, isFrontCamera);
-    if (imageRotation == null) return null;
-
-    final inputImageMetadata = InputImageMetadata(
-      size: size,
-      rotation: imageRotation,
+    return _ImageData(
+      bytes: bytes,
+      width: width.toDouble(),
+      height: height.toDouble(),
+      rotation: rotation,
       format: format,
-      bytesPerRow: image.planes[0].bytesPerRow,
+      bytesPerRow: bytesPerRow,
     );
-
-    return InputImage.fromBytes(bytes: bytes, metadata: inputImageMetadata);
   }
 
   /// 获取图像旋转方向
-  InputImageRotation? _getImageRotation(
+  static InputImageRotation? _getImageRotation(
     int sensorOrientation,
     bool isFrontCamera,
   ) {
     var rotation = sensorOrientation;
 
-    // Android 设备通常是 90度，iOS 通常是 90度
-    // 此处逻辑主要由 CameraController 的 sensorOrientation 决定
     if (Platform.isIOS) {
       rotation = sensorOrientation;
     } else if (Platform.isAndroid) {
@@ -119,7 +133,25 @@ class BarcodeService {
       rotation = rotationCompensation;
     }
 
-    // 将角度转换为 ML Kit 枚举
     return InputImageRotationValue.fromRawValue(rotation);
   }
+}
+
+/// 用于在 Isolate 间传递图像数据
+class _ImageData {
+  final Uint8List bytes;
+  final double width;
+  final double height;
+  final InputImageRotation rotation;
+  final InputImageFormat format;
+  final int bytesPerRow;
+
+  _ImageData({
+    required this.bytes,
+    required this.width,
+    required this.height,
+    required this.rotation,
+    required this.format,
+    required this.bytesPerRow,
+  });
 }

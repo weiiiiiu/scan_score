@@ -5,18 +5,15 @@ import 'package:provider/provider.dart';
 import '../../models/participant.dart';
 import '../../providers/participant_provider.dart';
 import '../../services/barcode_service.dart';
-// 注意：移除了 CameraService 引用，直接使用原生 Controller 以获得更好的流控制
 
-/// 检录状态
 enum CheckinState {
-  initial, // 初始状态
-  scanningMember, // 扫描选手码
-  memberScanned, // 选手码已扫描，显示选手信息
-  scanningWork, // 扫描作品码
-  completed, // 检录完成
+  initial,
+  scanningMember,
+  memberScanned,
+  scanningWork,
+  completed,
 }
 
-/// 检录页面
 class CheckinScreen extends StatefulWidget {
   const CheckinScreen({super.key});
 
@@ -26,30 +23,26 @@ class CheckinScreen extends StatefulWidget {
 
 class _CheckinScreenState extends State<CheckinScreen>
     with WidgetsBindingObserver {
-  // 核心控制器与服务
   CameraController? _controller;
   final BarcodeService _barcodeService = BarcodeService();
 
-  // 状态管理
   CheckinState _state = CheckinState.initial;
   String? _errorMessage;
+  bool _isProcessing = false;
 
-  // 扫描控制锁
-  bool _isProcessing = false; // 是否正在处理上一帧（并发锁）
-
-  // 数据缓存
   String? _scannedMemberCode;
   Participant? _currentParticipant;
   String? _scannedWorkCode;
 
-  // 防抖控制
+  // --- 防抖与节流控制 ---
   String? _lastScannedCode;
   DateTime? _lastScanTime;
+  // 强制忽略扫描的时间点（用于切换状态时的冷却）
+  DateTime? _ignoreScanUntil;
 
   @override
   void initState() {
     super.initState();
-    // 监听应用生命周期（处理切后台相机资源释放）
     WidgetsBinding.instance.addObserver(this);
     _initCamera();
   }
@@ -64,20 +57,15 @@ class _CheckinScreenState extends State<CheckinScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_controller == null || !_controller!.value.isInitialized) {
-      return;
-    }
-
+    if (_controller == null || !_controller!.value.isInitialized) return;
     if (state == AppLifecycleState.inactive) {
-      // 应用进入后台，释放相机
       _controller?.dispose();
     } else if (state == AppLifecycleState.resumed) {
-      // 应用回到前台，重新初始化
       _initCamera();
     }
   }
 
-  /// 计算当前是否应该暂停扫描逻辑（流在跑，但我们忽略数据）
+  // UI 暂停时不处理数据
   bool get _isScanPaused {
     return _state == CheckinState.memberScanned ||
         _state == CheckinState.completed ||
@@ -91,8 +79,6 @@ class _CheckinScreenState extends State<CheckinScreen>
         if (mounted) setState(() => _errorMessage = '未检测到相机设备');
         return;
       }
-
-      // 优先使用后置相机
       final camera = cameras.firstWhere(
         (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
@@ -100,7 +86,7 @@ class _CheckinScreenState extends State<CheckinScreen>
 
       _controller = CameraController(
         camera,
-        ResolutionPreset.medium, // 建议 Medium 或 High，太高会导致帧率下降且识别慢
+        ResolutionPreset.medium,
         enableAudio: false,
         imageFormatGroup: Platform.isAndroid
             ? ImageFormatGroup.nv21
@@ -113,13 +99,10 @@ class _CheckinScreenState extends State<CheckinScreen>
         setState(() {
           _state = CheckinState.scanningMember;
         });
-        // 初始化完成后立即启动流，且不再停止
         _startImageStream();
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _errorMessage = '相机初始化失败: $e');
-      }
+      if (mounted) setState(() => _errorMessage = '相机初始化失败: $e');
     }
   }
 
@@ -127,40 +110,47 @@ class _CheckinScreenState extends State<CheckinScreen>
     if (_controller == null) return;
 
     _controller!.startImageStream((CameraImage image) async {
-      // 1. 如果当前状态不需要扫描，或上一帧还在处理，直接丢弃
+      // 1. 基础状态检查
       if (_isScanPaused || _isProcessing) return;
+
+      // 2. [冷却机制]：检查是否处于“冷却期”
+      // 如果当前时间还在忽略时间内，直接丢弃这一帧，不进行识别
+      if (_ignoreScanUntil != null &&
+          DateTime.now().isBefore(_ignoreScanUntil!)) {
+        return;
+      }
 
       _isProcessing = true;
       try {
-        // 2. 调用 BarcodeService 识别
         final code = await _barcodeService.scanFromCameraImage(
           image,
           _controller!.description.sensorOrientation,
           _controller!.description.lensDirection == CameraLensDirection.front,
         );
 
-        // 3. 如果识别到有效条码，进行处理
         if (code != null && code.trim().isNotEmpty && mounted) {
           _routeScannedCode(code.trim());
         }
       } catch (e) {
         debugPrint('Stream process error: $e');
       } finally {
-        // 4. 释放锁
         _isProcessing = false;
       }
     });
   }
 
-  /// 路由分发：根据当前状态处理扫描到的码
   void _routeScannedCode(String code) {
-    // 全局防抖：防止同一秒内重复触发相同的码
     final now = DateTime.now();
+
+    // 3. 全局防抖逻辑
+    // 如果码和上次一样，且时间间隔小于 1.5秒，直接忽略
     if (_lastScannedCode == code &&
         _lastScanTime != null &&
         now.difference(_lastScanTime!).inMilliseconds < 1500) {
       return;
     }
+
+    // 更新记录
     _lastScannedCode = code;
     _lastScanTime = now;
 
@@ -176,14 +166,20 @@ class _CheckinScreenState extends State<CheckinScreen>
     final participant = provider.findByMemberCode(code);
 
     if (participant == null) {
+      if (_errorMessage != '未找到选手: $code') {
+        setState(() => _errorMessage = '未找到选手: $code');
+      }
+      return;
+    }
+
+    // 检查是否已检录
+    if (participant.checkStatus == 1) {
       setState(() {
-        _errorMessage = '未找到选手: $code';
+        _errorMessage = '该选手已检录: ${participant.memberCode}';
       });
       return;
     }
 
-    // 成功找到选手
-    // 状态变更为 memberScanned 后，_isScanPaused 会自动变 true，停止处理流数据
     setState(() {
       _scannedMemberCode = code;
       _currentParticipant = participant;
@@ -193,28 +189,20 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   void _handleWorkCode(String code) {
-    // 1. 核心修复：防止扫描到刚才的身份码
-    if (code == _scannedMemberCode) {
-      setState(() {
-        _errorMessage = '请勿重复扫描身份码，请扫描作品码';
-      });
-      return;
-    }
+    // 【修改点】：已移除 "code == _scannedMemberCode" 的拦截判断
+    // 允许作品码与身份码一致。
 
-    // 2. 检查作品码逻辑
     final provider = context.read<ParticipantProvider>();
     final existingParticipant = provider.findByWorkCode(code);
 
-    // 如果作品码已被其他人使用
+    // 检查作品码是否已被【其他人】使用
+    // 如果 existingParticipant.id == _currentParticipant.id，说明是自己重复扫或者同一个码，允许通过
     if (existingParticipant != null &&
         existingParticipant.id != _currentParticipant?.id) {
-      setState(() {
-        _errorMessage = '作品码已被使用: ${existingParticipant.name}';
-      });
+      setState(() => _errorMessage = '作品码已被使用: ${existingParticipant.name}');
       return;
     }
 
-    // 3. 扫描成功，进入完成状态
     setState(() {
       _scannedWorkCode = code;
       _state = CheckinState.completed;
@@ -226,11 +214,9 @@ class _CheckinScreenState extends State<CheckinScreen>
 
   Future<void> _bindWorkCode() async {
     if (_scannedMemberCode == null || _scannedWorkCode == null) return;
-
     try {
       final provider = context.read<ParticipantProvider>();
       await provider.bindWorkCode(_scannedMemberCode!, _scannedWorkCode!);
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -244,21 +230,34 @@ class _CheckinScreenState extends State<CheckinScreen>
       if (mounted) {
         setState(() {
           _errorMessage = '绑定失败: $e';
-          // 如果失败，回退状态允许重新扫描作品码
           _state = CheckinState.scanningWork;
+          // 绑定失败重试时，也给一点冷却时间
+          _ignoreScanUntil = DateTime.now().add(
+            const Duration(milliseconds: 1000),
+          );
         });
       }
     }
   }
+
+  // --- 状态切换控制 ---
 
   // 点击“扫描作品码”按钮
   void _continueToScanWork() {
     setState(() {
       _state = CheckinState.scanningWork;
       _errorMessage = null;
-      // 注意：这里不需要清空 _lastScannedCode
-      // 这样如果用户还没移开摄像头，防抖逻辑会阻止它立刻识别当前的身份码
-      // 同时 handleWorkCode 里的 if check 也会双重保障
+
+      // 1. 设置“冷却期”：未来 800毫秒内，不管扫到什么都忽略
+      // 防止手没移开导致瞬间误触
+      _ignoreScanUntil = DateTime.now().add(const Duration(milliseconds: 800));
+
+      // 2. 重置防抖计时器为“现在”
+      // 这里的逻辑很关键：我们把上次扫描的码设为当前身份码。
+      // 如果 0.8秒后摄像头还对着同一个码，防抖逻辑(diff < 1.5s)会阻止它被识别。
+      // 只有移开再回来，或者等待 1.5秒后，才能再次识别同一个码（作为作品码）。
+      _lastScannedCode = _scannedMemberCode;
+      _lastScanTime = DateTime.now();
     });
   }
 
@@ -270,7 +269,11 @@ class _CheckinScreenState extends State<CheckinScreen>
       _currentParticipant = null;
       _scannedWorkCode = null;
       _errorMessage = null;
-      _lastScannedCode = null; // 清空缓存，准备迎接新选手
+
+      _lastScannedCode = null;
+
+      // 同样给予一点冷却时间
+      _ignoreScanUntil = DateTime.now().add(const Duration(milliseconds: 800));
     });
   }
 
@@ -283,7 +286,6 @@ class _CheckinScreenState extends State<CheckinScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.bar_chart),
-            tooltip: '检录统计',
             onPressed: _showStatistics,
           ),
         ],
@@ -291,9 +293,7 @@ class _CheckinScreenState extends State<CheckinScreen>
       body: Column(
         children: [
           _buildStatusBar(),
-          // 预览区域占比较大
           Expanded(flex: 2, child: _buildCameraArea()),
-          // 底部操作面板
           Expanded(flex: 1, child: _buildInfoPanel()),
         ],
       ),
@@ -354,14 +354,10 @@ class _CheckinScreenState extends State<CheckinScreen>
     );
   }
 
-  /// 构建相机与覆盖层的 Stack
   Widget _buildCameraArea() {
-    // 即使在 memberScanned 状态，也保持相机预览在底层
-    // 这样切换状态时不会有黑屏
     return Stack(
       fit: StackFit.expand,
       children: [
-        // 1. 相机预览层
         if (_controller != null && _controller!.value.isInitialized)
           ClipRect(
             child: OverflowBox(
@@ -379,7 +375,6 @@ class _CheckinScreenState extends State<CheckinScreen>
         else
           const Center(child: CircularProgressIndicator()),
 
-        // 2. 扫描框 (仅在扫描状态显示)
         if (!_isScanPaused)
           Center(
             child: Container(
@@ -395,7 +390,6 @@ class _CheckinScreenState extends State<CheckinScreen>
             ),
           ),
 
-        // 3. 错误提示层 (Toast 样式)
         if (_errorMessage != null)
           Positioned(
             bottom: 20,
@@ -415,11 +409,10 @@ class _CheckinScreenState extends State<CheckinScreen>
             ),
           ),
 
-        // 4. 信息详情覆盖层 (当确认信息或完成时，覆盖在相机之上)
         if (_state == CheckinState.memberScanned ||
             _state == CheckinState.completed)
           Container(
-            color: Colors.white.withOpacity(0.95), // 不透明背景遮挡相机
+            color: Colors.white.withOpacity(0.95),
             child: _buildParticipantInfo(),
           ),
       ],
@@ -429,7 +422,6 @@ class _CheckinScreenState extends State<CheckinScreen>
   Widget _buildParticipantInfo() {
     if (_currentParticipant == null) return const SizedBox.shrink();
     final p = _currentParticipant!;
-
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -470,8 +462,6 @@ class _CheckinScreenState extends State<CheckinScreen>
                 '组别: ${p.group}',
                 style: TextStyle(fontSize: 16, color: Colors.grey[600]),
               ),
-
-            // 如果已完成，显示绑定的作品码
             if (_state == CheckinState.completed &&
                 _scannedWorkCode != null) ...[
               const SizedBox(height: 24),
@@ -514,22 +504,18 @@ class _CheckinScreenState extends State<CheckinScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
             color: Colors.black12,
             blurRadius: 10,
-            offset: const Offset(0, -5),
+            offset: Offset(0, -5),
           ),
         ],
       ),
       child: Column(
         children: [
-          // 操作按钮区域
           Expanded(child: Center(child: _buildActionButtons())),
-
           const Divider(),
-
-          // 统计数据
           Consumer<ParticipantProvider>(
             builder: (context, provider, _) {
               return Row(
@@ -599,7 +585,6 @@ class _CheckinScreenState extends State<CheckinScreen>
         ),
       );
     } else {
-      // 扫描中状态
       return Text(
         _state == CheckinState.scanningMember ? '请对准选手身份码' : '请对准作品码',
         style: TextStyle(color: Colors.grey[600], fontSize: 16),
@@ -609,7 +594,6 @@ class _CheckinScreenState extends State<CheckinScreen>
 
   Widget _buildStatItem(String label, String value, Color color) {
     return Column(
-      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           value,

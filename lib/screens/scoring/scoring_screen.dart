@@ -209,8 +209,15 @@ class _ScoringScreenState extends State<ScoringScreen>
     setState(() {
       _scannedWorkCode = workCode;
       if (participant != null) {
+        // 检查是否已评分
+        if (participant.score != null) {
+          _errorMessage = '该作品已评分: ${participant.score!.toStringAsFixed(1)}分';
+          _currentParticipant = null;
+          _state = ScoringState.initial;
+          return;
+        }
         _currentParticipant = participant;
-        _score = participant.score ?? 50.0;
+        _score = 50.0;
         _scoreController.text = _score.toStringAsFixed(1);
         _savedPhotoPath = participant.evidenceImg;
         _photoPath = null;
@@ -277,13 +284,13 @@ class _ScoringScreenState extends State<ScoringScreen>
         _score = 99.0;
         _scoreController.text = '99';
         _scoreController.selection = TextSelection.fromPosition(
-          TextPosition(offset: 2),
+          const TextPosition(offset: 2),
         );
       } else if (parsed < 0) {
         _score = 0.0;
         _scoreController.text = '0';
         _scoreController.selection = TextSelection.fromPosition(
-          TextPosition(offset: 1),
+          const TextPosition(offset: 1),
         );
       } else {
         _score = parsed;
@@ -492,7 +499,7 @@ class _ScoringScreenState extends State<ScoringScreen>
                 ),
                 ElevatedButton(
                   onPressed: _initializeCamera,
-                  child: const Text('重试相机'),
+                  child: const Text('继续评分'),
                 ),
               ],
             )

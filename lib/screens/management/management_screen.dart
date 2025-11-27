@@ -477,6 +477,10 @@ class _ManagementScreenState extends State<ManagementScreen> {
                       onChanged: (value) {
                         setDialogState(() {
                           checkStatus = value ? 1 : 0;
+                          // 取消检录时清空作品码
+                          if (checkStatus == 0) {
+                            workCodeController.clear();
+                          }
                         });
                       },
                     ),

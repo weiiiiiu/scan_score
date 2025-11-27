@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/participant.dart';
@@ -13,7 +14,7 @@ class CsvService {
 
   CsvService(this._storageService, this._fileService);
 
-  /// 从指定路径加载 CSV 文件
+  /// 从指定路径加载 CSV 文件 (使用 Isolate 在后台线程解析)
   Future<List<Participant>> loadCsv(String filePath) async {
     final file = File(filePath);
     if (!await file.exists()) {
@@ -21,6 +22,13 @@ class CsvService {
     }
 
     final csvString = await file.readAsString();
+
+    // 使用 Isolate.run 将 CSV 解析放到后台线程
+    return await Isolate.run(() => _parseCsvInIsolate(csvString));
+  }
+
+  /// 在 Isolate 中解析 CSV (必须是顶层或静态方法)
+  static List<Participant> _parseCsvInIsolate(String csvString) {
     final List<List<dynamic>> rows = const CsvToListConverter().convert(
       csvString,
     );
@@ -40,7 +48,6 @@ class CsvService {
         }
         participants.add(Participant.fromCsvRow(rows[i], rowIndex: i));
       } catch (e) {
-        print('解析第 ${i + 1} 行数据失败: $e');
         // 跳过错误行，继续解析
       }
     }
@@ -48,17 +55,12 @@ class CsvService {
     return participants;
   }
 
-  /// 保存参赛者数据到 CSV 文件
+  /// 保存参赛者数据到 CSV 文件 (使用 Isolate 在后台线程生成)
   Future<void> saveCsv(String filePath, List<Participant> participants) async {
-    // 构建 CSV 数据（包含表头）
-    // 表头: 姓名,参赛编号,组别,头像名称,领队姓名,作品码,检录状态,分数,评分照片
-    final rows = <List<dynamic>>[
-      ['姓名', '参赛编号', '组别', '头像名称', '领队姓名', '作品码', '检录状态', '分数', '评分照片'],
-      ...participants.map((p) => p.toCsvRow()),
-    ];
-
-    // 转换为 CSV 字符串
-    final csvString = const ListToCsvConverter().convert(rows);
+    // 使用 Isolate.run 将 CSV 生成放到后台线程
+    final csvString = await Isolate.run(
+      () => _generateCsvInIsolate(participants),
+    );
 
     // 确保目录存在
     final dir = File(filePath).parent;
@@ -68,6 +70,19 @@ class CsvService {
 
     // 写入文件
     await File(filePath).writeAsString(csvString);
+  }
+
+  /// 在 Isolate 中生成 CSV 字符串
+  static String _generateCsvInIsolate(List<Participant> participants) {
+    // 构建 CSV 数据（包含表头）
+    // 表头: 姓名,参赛编号,组别,头像名称,领队姓名,作品码,检录状态,分数,评分照片
+    final rows = <List<dynamic>>[
+      ['姓名', '参赛编号', '组别', '头像名称', '领队姓名', '作品码', '检录状态', '分数', '评分照片'],
+      ...participants.map((p) => p.toCsvRow()),
+    ];
+
+    // 转换为 CSV 字符串
+    return const ListToCsvConverter().convert(rows);
   }
 
   /// 导入 CSV 文件（用户选择文件）
