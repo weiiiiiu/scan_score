@@ -1,10 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:provider/provider.dart';
 import '../../models/participant.dart';
 import '../../providers/participant_provider.dart';
 import '../../services/barcode_service.dart';
-import '../../services/camera_service.dart';
+// 注意：移除了 CameraService 引用，直接使用原生 Controller 以获得更好的流控制
 
 /// 检录状态
 enum CheckinState {
@@ -23,102 +24,151 @@ class CheckinScreen extends StatefulWidget {
   State<CheckinScreen> createState() => _CheckinScreenState();
 }
 
-class _CheckinScreenState extends State<CheckinScreen> {
-  final CameraService _cameraService = CameraService();
+class _CheckinScreenState extends State<CheckinScreen>
+    with WidgetsBindingObserver {
+  // 核心控制器与服务
+  CameraController? _controller;
   final BarcodeService _barcodeService = BarcodeService();
 
+  // 状态管理
   CheckinState _state = CheckinState.initial;
+  String? _errorMessage;
+
+  // 扫描控制锁
+  bool _isProcessing = false; // 是否正在处理上一帧（并发锁）
+
+  // 数据缓存
   String? _scannedMemberCode;
   Participant? _currentParticipant;
   String? _scannedWorkCode;
-  String? _errorMessage;
-  bool _isProcessing = false;
-  String? _lastScannedCode; // 上一次扫描到的条码，用于防止重复识别
-  DateTime? _lastScanTime; // 上一次扫描时间
+
+  // 防抖控制
+  String? _lastScannedCode;
+  DateTime? _lastScanTime;
 
   @override
   void initState() {
     super.initState();
+    // 监听应用生命周期（处理切后台相机资源释放）
+    WidgetsBinding.instance.addObserver(this);
     _initCamera();
   }
 
   @override
   void dispose() {
-    _cameraService.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _controller?.dispose();
     _barcodeService.dispose();
     super.dispose();
   }
 
-  Future<void> _initCamera() async {
-    final success = await _cameraService.initialize();
-    if (success && mounted) {
-      setState(() {
-        _state = CheckinState.scanningMember;
-      });
-      _startScanning();
-    } else if (mounted) {
-      setState(() {
-        _errorMessage = '相机初始化失败，请检查权限设置';
-      });
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_controller == null || !_controller!.value.isInitialized) {
+      return;
+    }
+
+    if (state == AppLifecycleState.inactive) {
+      // 应用进入后台，释放相机
+      _controller?.dispose();
+    } else if (state == AppLifecycleState.resumed) {
+      // 应用回到前台，重新初始化
+      _initCamera();
     }
   }
 
-  Future<void> _startScanning() async {
-    if (!_cameraService.isInitialized) return;
+  /// 计算当前是否应该暂停扫描逻辑（流在跑，但我们忽略数据）
+  bool get _isScanPaused {
+    return _state == CheckinState.memberScanned ||
+        _state == CheckinState.completed ||
+        _state == CheckinState.initial;
+  }
 
-    // 清除上次扫描的条码缓存，准备扫描新条码
-    _lastScannedCode = null;
-    _lastScanTime = null;
+  Future<void> _initCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        if (mounted) setState(() => _errorMessage = '未检测到相机设备');
+        return;
+      }
 
-    await _cameraService.startImageStream((CameraImage image) async {
-      if (_isProcessing) return;
-
-      final code = await _barcodeService.scanFromCameraImage(
-        image,
-        _cameraService.sensorOrientation,
-        _cameraService.isFrontCamera,
+      // 优先使用后置相机
+      final camera = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
       );
 
-      // 确保条码非空且有效
-      if (code != null && code.trim().isNotEmpty && mounted) {
-        final trimmedCode = code.trim();
-        final now = DateTime.now();
+      _controller = CameraController(
+        camera,
+        ResolutionPreset.medium, // 建议 Medium 或 High，太高会导致帧率下降且识别慢
+        enableAudio: false,
+        imageFormatGroup: Platform.isAndroid
+            ? ImageFormatGroup.nv21
+            : ImageFormatGroup.bgra8888,
+      );
 
-        // 防止重复识别同一个条码（2秒内不重复处理同一个条码）
-        if (_lastScannedCode == trimmedCode &&
-            _lastScanTime != null &&
-            now.difference(_lastScanTime!).inMilliseconds < 2000) {
-          return;
+      await _controller!.initialize();
+
+      if (mounted) {
+        setState(() {
+          _state = CheckinState.scanningMember;
+        });
+        // 初始化完成后立即启动流，且不再停止
+        _startImageStream();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _errorMessage = '相机初始化失败: $e');
+      }
+    }
+  }
+
+  void _startImageStream() {
+    if (_controller == null) return;
+
+    _controller!.startImageStream((CameraImage image) async {
+      // 1. 如果当前状态不需要扫描，或上一帧还在处理，直接丢弃
+      if (_isScanPaused || _isProcessing) return;
+
+      _isProcessing = true;
+      try {
+        // 2. 调用 BarcodeService 识别
+        final code = await _barcodeService.scanFromCameraImage(
+          image,
+          _controller!.description.sensorOrientation,
+          _controller!.description.lensDirection == CameraLensDirection.front,
+        );
+
+        // 3. 如果识别到有效条码，进行处理
+        if (code != null && code.trim().isNotEmpty && mounted) {
+          _routeScannedCode(code.trim());
         }
-
-        _lastScannedCode = trimmedCode;
-        _lastScanTime = now;
-        _handleScannedCode(trimmedCode);
+      } catch (e) {
+        debugPrint('Stream process error: $e');
+      } finally {
+        // 4. 释放锁
+        _isProcessing = false;
       }
     });
   }
 
-  void _handleScannedCode(String code) {
-    if (_isProcessing) return;
-    _isProcessing = true;
-
-    setState(() {
-      _errorMessage = null;
-    });
+  /// 路由分发：根据当前状态处理扫描到的码
+  void _routeScannedCode(String code) {
+    // 全局防抖：防止同一秒内重复触发相同的码
+    final now = DateTime.now();
+    if (_lastScannedCode == code &&
+        _lastScanTime != null &&
+        now.difference(_lastScanTime!).inMilliseconds < 1500) {
+      return;
+    }
+    _lastScannedCode = code;
+    _lastScanTime = now;
 
     if (_state == CheckinState.scanningMember) {
       _handleMemberCode(code);
     } else if (_state == CheckinState.scanningWork) {
       _handleWorkCode(code);
-    } else {
-      // 如果不在扫描状态，忽略这个条码
-      _isProcessing = false;
-      return;
     }
-
-    // 注意：_isProcessing 的重置在 _handleMemberCode 和 _handleWorkCode 中处理
-    // 成功处理后不需要重置，因为会停止扫描
-    // 失败时需要重置，以便继续扫描
   }
 
   void _handleMemberCode(String code) {
@@ -129,54 +179,49 @@ class _CheckinScreenState extends State<CheckinScreen> {
       setState(() {
         _errorMessage = '未找到选手: $code';
       });
-      // 继续扫描，重置处理标志
-      _isProcessing = false;
       return;
     }
 
-    // 停止扫描，显示选手信息
-    _cameraService.stopImageStream();
-
-    // 清除条码缓存，防止身份码被误识别为作品码
-    _lastScannedCode = null;
-    _lastScanTime = null;
-
+    // 成功找到选手
+    // 状态变更为 memberScanned 后，_isScanPaused 会自动变 true，停止处理流数据
     setState(() {
       _scannedMemberCode = code;
       _currentParticipant = participant;
       _state = CheckinState.memberScanned;
+      _errorMessage = null;
     });
-
-    // 成功后保持 _isProcessing = true，防止继续处理
   }
 
   void _handleWorkCode(String code) {
-    final provider = context.read<ParticipantProvider>();
+    // 1. 核心修复：防止扫描到刚才的身份码
+    if (code == _scannedMemberCode) {
+      setState(() {
+        _errorMessage = '请勿重复扫描身份码，请扫描作品码';
+      });
+      return;
+    }
 
-    // 检查作品码是否已被使用
+    // 2. 检查作品码逻辑
+    final provider = context.read<ParticipantProvider>();
     final existingParticipant = provider.findByWorkCode(code);
+
+    // 如果作品码已被其他人使用
     if (existingParticipant != null &&
         existingParticipant.id != _currentParticipant?.id) {
       setState(() {
         _errorMessage = '作品码已被使用: ${existingParticipant.name}';
       });
-      // 继续扫描，重置处理标志
-      _isProcessing = false;
       return;
     }
 
-    // 停止扫描
-    _cameraService.stopImageStream();
-
+    // 3. 扫描成功，进入完成状态
     setState(() {
       _scannedWorkCode = code;
       _state = CheckinState.completed;
+      _errorMessage = null;
     });
 
-    // 绑定作品码
     _bindWorkCode();
-
-    // 成功后保持 _isProcessing = true，防止继续处理
   }
 
   Future<void> _bindWorkCode() async {
@@ -191,6 +236,7 @@ class _CheckinScreenState extends State<CheckinScreen> {
           SnackBar(
             content: Text('检录成功: ${_currentParticipant?.name}'),
             backgroundColor: Colors.green,
+            duration: const Duration(seconds: 1),
           ),
         );
       }
@@ -198,118 +244,33 @@ class _CheckinScreenState extends State<CheckinScreen> {
       if (mounted) {
         setState(() {
           _errorMessage = '绑定失败: $e';
+          // 如果失败，回退状态允许重新扫描作品码
           _state = CheckinState.scanningWork;
         });
-        _startScanning();
       }
     }
   }
 
+  // 点击“扫描作品码”按钮
   void _continueToScanWork() {
-    // 清除条码缓存，准备扫描新的作品码
-    // 重要：将已扫描的身份码设为上次扫描码，防止被再次识别
-    _lastScannedCode = _scannedMemberCode;
-    _lastScanTime = DateTime.now();
-    _isProcessing = false;
-
     setState(() {
       _state = CheckinState.scanningWork;
       _errorMessage = null;
-    });
-
-    // 延迟启动扫描，让相机有时间刷新图像缓存
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted && _state == CheckinState.scanningWork) {
-        _startScanningForWork();
-      }
+      // 注意：这里不需要清空 _lastScannedCode
+      // 这样如果用户还没移开摄像头，防抖逻辑会阻止它立刻识别当前的身份码
+      // 同时 handleWorkCode 里的 if check 也会双重保障
     });
   }
 
-  /// 专门用于扫描作品码的方法，不清除缓存
-  Future<void> _startScanningForWork() async {
-    if (!_cameraService.isInitialized) return;
-
-    await _cameraService.startImageStream((CameraImage image) async {
-      if (_isProcessing) return;
-
-      final code = await _barcodeService.scanFromCameraImage(
-        image,
-        _cameraService.sensorOrientation,
-        _cameraService.isFrontCamera,
-      );
-
-      // 确保条码非空且有效
-      if (code != null && code.trim().isNotEmpty && mounted) {
-        final trimmedCode = code.trim();
-        final now = DateTime.now();
-
-        // 防止重复识别同一个条码（2秒内不重复处理同一个条码）
-        // 这也会阻止身份码被误识别为作品码
-        if (_lastScannedCode == trimmedCode &&
-            _lastScanTime != null &&
-            now.difference(_lastScanTime!).inMilliseconds < 2000) {
-          return;
-        }
-
-        _lastScannedCode = trimmedCode;
-        _lastScanTime = now;
-        _handleScannedCode(trimmedCode);
-      }
-    });
-  }
-
+  // 点击“继续检录下一位”或“取消”按钮
   void _resetScan() {
-    // 重要：将上次扫描的作品码设为缓存，防止被误识别为下一位选手的身份码
-    _lastScannedCode = _scannedWorkCode;
-    _lastScanTime = DateTime.now();
-    _isProcessing = false;
-
     setState(() {
       _state = CheckinState.scanningMember;
       _scannedMemberCode = null;
       _currentParticipant = null;
       _scannedWorkCode = null;
       _errorMessage = null;
-    });
-
-    // 延迟启动扫描，让相机有时间刷新图像缓存
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted && _state == CheckinState.scanningMember) {
-        _startScanningForMember();
-      }
-    });
-  }
-
-  /// 专门用于扫描身份码的方法，不清除缓存
-  Future<void> _startScanningForMember() async {
-    if (!_cameraService.isInitialized) return;
-
-    await _cameraService.startImageStream((CameraImage image) async {
-      if (_isProcessing) return;
-
-      final code = await _barcodeService.scanFromCameraImage(
-        image,
-        _cameraService.sensorOrientation,
-        _cameraService.isFrontCamera,
-      );
-
-      // 确保条码非空且有效
-      if (code != null && code.trim().isNotEmpty && mounted) {
-        final trimmedCode = code.trim();
-        final now = DateTime.now();
-
-        // 防止重复识别同一个条码（2秒内不重复处理同一个条码）
-        // 这也会阻止上次的作品码被误识别为身份码
-        if (_lastScannedCode == trimmedCode &&
-            _lastScanTime != null &&
-            now.difference(_lastScanTime!).inMilliseconds < 2000) {
-          return;
-        }
-
-        _lastScannedCode = trimmedCode;
-        _lastScanTime = now;
-        _handleScannedCode(trimmedCode);
-      }
+      _lastScannedCode = null; // 清空缓存，准备迎接新选手
     });
   }
 
@@ -320,7 +281,6 @@ class _CheckinScreenState extends State<CheckinScreen> {
         title: const Text('选手检录'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
-          // 检录统计按钮
           IconButton(
             icon: const Icon(Icons.bar_chart),
             tooltip: '检录统计',
@@ -330,13 +290,10 @@ class _CheckinScreenState extends State<CheckinScreen> {
       ),
       body: Column(
         children: [
-          // 状态提示栏
           _buildStatusBar(),
-
-          // 相机预览区域
-          Expanded(flex: 2, child: _buildCameraPreview()),
-
-          // 信息展示区域
+          // 预览区域占比较大
+          Expanded(flex: 2, child: _buildCameraArea()),
+          // 底部操作面板
           Expanded(flex: 1, child: _buildInfoPanel()),
         ],
       ),
@@ -367,7 +324,7 @@ class _CheckinScreenState extends State<CheckinScreen> {
       case CheckinState.scanningWork:
         statusText = '请扫描作品码';
         statusColor = Colors.purple;
-        statusIcon = Icons.qr_code;
+        statusIcon = Icons.image;
         break;
       case CheckinState.completed:
         statusText = '检录完成';
@@ -377,6 +334,7 @@ class _CheckinScreenState extends State<CheckinScreen> {
     }
 
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
       color: statusColor.withOpacity(0.1),
       child: Row(
@@ -396,72 +354,48 @@ class _CheckinScreenState extends State<CheckinScreen> {
     );
   }
 
-  Widget _buildCameraPreview() {
-    if (_errorMessage != null && _state == CheckinState.initial) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error, size: 64, color: Colors.red),
-            const SizedBox(height: 16),
-            Text(
-              _errorMessage!,
-              style: const TextStyle(color: Colors.red),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _initCamera,
-              icon: const Icon(Icons.refresh),
-              label: const Text('重试'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (!_cameraService.isInitialized || _cameraService.controller == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    // 检录完成或选手确认时，不显示相机预览
-    if (_state == CheckinState.completed ||
-        _state == CheckinState.memberScanned) {
-      return _buildParticipantInfo();
-    }
-
+  /// 构建相机与覆盖层的 Stack
+  Widget _buildCameraArea() {
+    // 即使在 memberScanned 状态，也保持相机预览在底层
+    // 这样切换状态时不会有黑屏
     return Stack(
+      fit: StackFit.expand,
       children: [
-        // 相机预览
-        ClipRect(
-          child: OverflowBox(
-            alignment: Alignment.center,
-            child: FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width:
-                    _cameraService.controller!.value.previewSize?.height ?? 0,
-                height:
-                    _cameraService.controller!.value.previewSize?.width ?? 0,
-                child: CameraPreview(_cameraService.controller!),
+        // 1. 相机预览层
+        if (_controller != null && _controller!.value.isInitialized)
+          ClipRect(
+            child: OverflowBox(
+              alignment: Alignment.center,
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _controller!.value.previewSize!.height,
+                  height: _controller!.value.previewSize!.width,
+                  child: CameraPreview(_controller!),
+                ),
+              ),
+            ),
+          )
+        else
+          const Center(child: CircularProgressIndicator()),
+
+        // 2. 扫描框 (仅在扫描状态显示)
+        if (!_isScanPaused)
+          Center(
+            child: Container(
+              width: 250,
+              height: 250,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.greenAccent, width: 2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Center(
+                child: Icon(Icons.add, color: Colors.greenAccent, size: 30),
               ),
             ),
           ),
-        ),
 
-        // 扫描框
-        Center(
-          child: Container(
-            width: 250,
-            height: 250,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.green, width: 3),
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        ),
-
-        // 错误提示
+        // 3. 错误提示层 (Toast 样式)
         if (_errorMessage != null)
           Positioned(
             bottom: 20,
@@ -480,86 +414,96 @@ class _CheckinScreenState extends State<CheckinScreen> {
               ),
             ),
           ),
+
+        // 4. 信息详情覆盖层 (当确认信息或完成时，覆盖在相机之上)
+        if (_state == CheckinState.memberScanned ||
+            _state == CheckinState.completed)
+          Container(
+            color: Colors.white.withOpacity(0.95), // 不透明背景遮挡相机
+            child: _buildParticipantInfo(),
+          ),
       ],
     );
   }
 
   Widget _buildParticipantInfo() {
-    if (_currentParticipant == null) {
-      return const SizedBox.shrink();
-    }
-
+    if (_currentParticipant == null) return const SizedBox.shrink();
     final p = _currentParticipant!;
 
-    return Container(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // 头像
-          CircleAvatar(
-            radius: 50,
-            backgroundColor: Colors.grey[200],
-            child: p.avatarPath != null
-                ? ClipOval(
-                    child: Image.asset(
-                      'assets/images/${p.avatarPath}',
-                      fit: BoxFit.cover,
-                      width: 100,
-                      height: 100,
-                      errorBuilder: (_, __, ___) => const Icon(
-                        Icons.person,
-                        size: 50,
-                        color: Colors.grey,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircleAvatar(
+              radius: 50,
+              backgroundColor: Colors.grey[200],
+              child: p.avatarPath != null
+                  ? ClipOval(
+                      child: Image.asset(
+                        'assets/images/${p.avatarPath}',
+                        fit: BoxFit.cover,
+                        width: 100,
+                        height: 100,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.person,
+                          size: 50,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    )
+                  : const Icon(Icons.person, size: 50, color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              p.name,
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '参赛编号: ${p.memberCode}',
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+            ),
+            if (p.group != null)
+              Text(
+                '组别: ${p.group}',
+                style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              ),
+
+            // 如果已完成，显示绑定的作品码
+            if (_state == CheckinState.completed &&
+                _scannedWorkCode != null) ...[
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.green[50],
+                  border: Border.all(color: Colors.green),
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.check_circle, color: Colors.green),
+                    const SizedBox(width: 8),
+                    Text(
+                      '作品码: $_scannedWorkCode',
+                      style: const TextStyle(
+                        color: Colors.green,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
                       ),
                     ),
-                  )
-                : const Icon(Icons.person, size: 50, color: Colors.grey),
-          ),
-          const SizedBox(height: 16),
-
-          // 姓名
-          Text(
-            p.name,
-            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-
-          // 信息
-          Text(
-            '参赛编号: ${p.memberCode}',
-            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-          ),
-          if (p.group != null)
-            Text(
-              '组别: ${p.group}',
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
-          if (p.leaderName != null)
-            Text(
-              '领队: ${p.leaderName}',
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
-
-          // 检录状态
-          if (_state == CheckinState.completed && _scannedWorkCode != null) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.green,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '作品码: $_scannedWorkCode',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
+                  ],
                 ),
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -568,79 +512,38 @@ class _CheckinScreenState extends State<CheckinScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.grey[100],
+        color: Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 10,
+            offset: const Offset(0, -5),
+          ),
+        ],
       ),
       child: Column(
         children: [
-          // 操作按钮
-          if (_state == CheckinState.memberScanned) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _resetScan,
-                    icon: const Icon(Icons.cancel),
-                    label: const Text('取消'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _continueToScanWork,
-                    icon: const Icon(Icons.arrow_forward),
-                    label: const Text('扫描作品码'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ] else if (_state == CheckinState.completed) ...[
-            ElevatedButton.icon(
-              onPressed: _resetScan,
-              icon: const Icon(Icons.add),
-              label: const Text('继续检录下一位'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  vertical: 16,
-                  horizontal: 32,
-                ),
-              ),
-            ),
-          ],
+          // 操作按钮区域
+          Expanded(child: Center(child: _buildActionButtons())),
 
-          const Spacer(),
+          const Divider(),
 
-          // 检录统计
+          // 统计数据
           Consumer<ParticipantProvider>(
             builder: (context, provider, _) {
               return Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _buildStatItem(
-                    '总人数',
-                    provider.totalCount.toString(),
-                    Colors.blue,
-                  ),
+                  _buildStatItem('总人数', '${provider.totalCount}', Colors.blue),
                   _buildStatItem(
                     '已检录',
-                    provider.checkedInCount.toString(),
+                    '${provider.checkedInCount}',
                     Colors.green,
                   ),
                   _buildStatItem(
                     '未检录',
-                    provider.uncheckedCount.toString(),
+                    '${provider.uncheckedCount}',
                     Colors.orange,
                   ),
                 ],
@@ -652,13 +555,66 @@ class _CheckinScreenState extends State<CheckinScreen> {
     );
   }
 
+  Widget _buildActionButtons() {
+    if (_state == CheckinState.memberScanned) {
+      return Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _resetScan,
+              icon: const Icon(Icons.cancel),
+              label: const Text('取消'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: _continueToScanWork,
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text('扫描作品码'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+          ),
+        ],
+      );
+    } else if (_state == CheckinState.completed) {
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: _resetScan,
+          icon: const Icon(Icons.person_add),
+          label: const Text('继续检录下一位'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+        ),
+      );
+    } else {
+      // 扫描中状态
+      return Text(
+        _state == CheckinState.scanningMember ? '请对准选手身份码' : '请对准作品码',
+        style: TextStyle(color: Colors.grey[600], fontSize: 16),
+      );
+    }
+  }
+
   Widget _buildStatItem(String label, String value, Color color) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           value,
           style: TextStyle(
-            fontSize: 24,
+            fontSize: 22,
             fontWeight: FontWeight.bold,
             color: color,
           ),
@@ -670,7 +626,6 @@ class _CheckinScreenState extends State<CheckinScreen> {
 
   void _showStatistics() {
     final provider = context.read<ParticipantProvider>();
-
     showDialog(
       context: context,
       builder: (context) => AlertDialog(

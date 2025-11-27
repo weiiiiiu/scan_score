@@ -126,7 +126,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
-          hintText: '搜索姓名、参赛编号或作品码...',
+          hintText: '搜索姓名、参赛编号...',
           prefixIcon: const Icon(Icons.search),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
@@ -144,6 +144,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
           fillColor: Colors.grey[100],
         ),
         onChanged: (value) {
+          // 检查是否输入了admin，进入管理页面
+          if (value.toLowerCase() == 'admin') {
+            _searchController.clear();
+            setState(() {
+              _searchQuery = '';
+            });
+            _navigateToManagement();
+            return;
+          }
           setState(() {
             _searchQuery = value;
           });
@@ -263,18 +272,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            // 管理按钮
-            Expanded(
-              child: _ActionButton(
-                icon: Icons.edit_note,
-                label: '管理',
-                color: Colors.purple,
-                onPressed: provider.hasData
-                    ? () => _navigateToManagement()
-                    : null,
-              ),
-            ),
-            const SizedBox(width: 12),
             // 导出按钮
             Expanded(
               child: _ActionButton(
@@ -290,8 +287,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// 导入 CSV 文件
+  /// 导入 CSV 文件（需要密码验证）
   Future<void> _importCsv(ParticipantProvider provider) async {
+    // 导入前需要密码验证
+    final verified = await AuthDialog.show(context, title: '导入验证');
+    if (!verified) return;
+
     setState(() {
       _isImporting = true;
     });
@@ -323,13 +324,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  /// 导航到检录页面（需要验证）
-  Future<void> _navigateToCheckin() async {
-    final verified = await AuthDialog.show(context, title: '检录验证');
-
-    if (verified && mounted) {
-      Navigator.pushNamed(context, AppRoutes.checkin);
-    }
+  /// 导航到检录页面（无需验证）
+  void _navigateToCheckin() {
+    Navigator.pushNamed(context, AppRoutes.checkin);
   }
 
   /// 导航到评分页面（无需验证）
@@ -337,17 +334,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     Navigator.pushNamed(context, AppRoutes.scoring);
   }
 
-  /// 导航到管理页面（需要超级管理员验证）
-  Future<void> _navigateToManagement() async {
-    final verified = await AuthDialog.show(
-      context,
-      title: '管理验证',
-      superOnly: true,
-    );
-
-    if (verified && mounted) {
-      Navigator.pushNamed(context, AppRoutes.management);
-    }
+  /// 导航到管理页面（通过搜索栏输入admin进入，无需密码）
+  void _navigateToManagement() {
+    Navigator.pushNamed(context, AppRoutes.management);
   }
 
   /// 导航到导出页面（需要验证）

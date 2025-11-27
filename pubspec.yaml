@@ -39,36 +39,36 @@ dependencies:
   provider: ^6.1.1
 
   # 条码扫描
-  google_mlkit_barcode_scanning: ^0.11.0
+  google_mlkit_barcode_scanning: ^0.14.1
 
   # 相机拍照
-  camera: ^0.10.5+9
+  camera: ^0.11.3
 
   # 文件管理
-  path_provider: ^2.1.2
-  file_picker: ^10.0.0
-  path: ^1.8.3
+  path_provider: ^2.1.5
+  file_picker: ^10.3.7
+  path: ^1.9.1
 
   # CSV 处理
   csv: ^6.0.0
 
   # 权限管理
-  permission_handler: ^11.3.0
+  permission_handler: ^12.0.1
 
   # 图片处理
-  image: ^4.1.7
+  image: ^4.5.4
 
   # 本地存储
-  shared_preferences: ^2.2.2
+  shared_preferences: ^2.5.3
 
   # 日期时间
-  intl: ^0.19.0
+  intl: ^0.20.2
 
   # 分享功能
-  share_plus: ^10.0.0
+  share_plus: ^10.0.3
 
   # 压缩文件
-  archive: ^3.4.10
+  archive: ^4.0.7
 
 dev_dependencies:
   flutter_test:

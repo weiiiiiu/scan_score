@@ -100,15 +100,6 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
                 label: const Text('检录状态'),
                 onSort: (index, ascending) => _onSort(index, ascending),
               ),
-              DataColumn(
-                label: const Text('作品码'),
-                onSort: (index, ascending) => _onSort(index, ascending),
-              ),
-              DataColumn(
-                label: const Text('分数'),
-                numeric: true,
-                onSort: (index, ascending) => _onSort(index, ascending),
-              ),
             ],
             source: _ParticipantDataSource(
               data: data,
@@ -149,12 +140,6 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
         case 4: // 检录状态
           result = a.checkStatus.compareTo(b.checkStatus);
           break;
-        case 5: // 作品码
-          result = (a.workCode ?? '').compareTo(b.workCode ?? '');
-          break;
-        case 6: // 分数
-          result = (a.score ?? 0).compareTo(b.score ?? 0);
-          break;
         default:
           result = 0;
       }
@@ -192,18 +177,6 @@ class _ParticipantDataSource extends DataTableSource {
         DataCell(Text(participant.group ?? '-')),
         DataCell(Text(participant.leaderName ?? '-')),
         DataCell(_buildStatusChip(participant.checkStatus)),
-        DataCell(Text(participant.workCode ?? '-')),
-        DataCell(
-          participant.score != null
-              ? Text(
-                  participant.score!.toStringAsFixed(1),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.orange,
-                  ),
-                )
-              : const Text('-'),
-        ),
       ],
     );
   }

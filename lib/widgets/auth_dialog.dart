@@ -65,10 +65,7 @@ class _AuthDialogState extends State<AuthDialog> {
     if (!_formKey.currentState!.validate()) return;
 
     final authProvider = context.read<AuthProvider>();
-    bool isValid = authProvider.verifyPassword(
-      _passwordController.text,
-      superOnly: widget.superOnly,
-    );
+    bool isValid = authProvider.verifyPassword(_passwordController.text);
 
     if (isValid) {
       widget.onSuccess();

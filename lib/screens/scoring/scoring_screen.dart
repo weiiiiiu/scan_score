@@ -4,19 +4,17 @@ import 'package:camera/camera.dart';
 import 'package:provider/provider.dart';
 import 'package:path/path.dart' as path;
 import '../../providers/participant_provider.dart';
-import '../../services/camera_service.dart';
 import '../../services/barcode_service.dart';
 import '../../services/storage_service.dart';
 import '../../services/file_service.dart';
 import '../../models/participant.dart';
 
-/// 评分状态枚举
 enum ScoringState {
-  initial, // 初始状态，等待扫描作品码
-  scanning, // 正在扫描
-  participantFound, // 找到选手，显示信息
-  scoring, // 评分中（拍照、调分）
-  photoTaken, // 已拍照
+  initial, // 初始状态，等待相机就绪
+  scanning, // 正在扫描作品码
+  participantFound, // 找到选手，显示静态信息（相机可暂停）
+  scoring, // 评分中（开启相机预览准备拍照）
+  photoTaken, // 已拍照，显示照片预览
   completed, // 评分完成
 }
 
@@ -27,60 +25,110 @@ class ScoringScreen extends StatefulWidget {
   State<ScoringScreen> createState() => _ScoringScreenState();
 }
 
-class _ScoringScreenState extends State<ScoringScreen> {
-  final CameraService _cameraService = CameraService();
+class _ScoringScreenState extends State<ScoringScreen>
+    with WidgetsBindingObserver {
+  // 核心服务
+  CameraController? _controller;
   final BarcodeService _barcodeService = BarcodeService();
   final StorageService _storageService = StorageService();
   final FileService _fileService = FileService();
+
   final TextEditingController _scoreController = TextEditingController();
 
+  // 状态管理
   ScoringState _state = ScoringState.initial;
   Participant? _currentParticipant;
-  double _score = 50.0; // 默认分数
-  String? _photoPath; // 临时拍照路径
-  String? _savedPhotoPath; // 最终保存的照片路径
+  double _score = 50.0;
+  String? _photoPath;
+  String? _savedPhotoPath;
   String? _errorMessage;
+
+  // 扫描控制
   bool _isProcessing = false;
   String _scannedWorkCode = '';
-  String? _lastScannedCode; // 上一次扫描到的条码，用于防止重复识别
-  DateTime? _lastScanTime; // 上一次扫描时间
+  String? _lastScannedCode;
+  DateTime? _lastScanTime;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scoreController.text = _score.toStringAsFixed(1);
     _initializeCamera();
   }
 
   @override
   void dispose() {
-    _stopScanning();
-    _cameraService.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _controller?.dispose();
     _barcodeService.dispose();
     _scoreController.dispose();
     super.dispose();
   }
 
+  // 生命周期监听：处理切后台
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final CameraController? cameraController = _controller;
+
+    // App 切到后台或不活跃
+    if (cameraController == null || !cameraController.value.isInitialized) {
+      return;
+    }
+
+    if (state == AppLifecycleState.inactive) {
+      cameraController.dispose();
+    } else if (state == AppLifecycleState.resumed) {
+      // App 回到前台，重新初始化相机
+      _initializeCamera();
+    }
+  }
+
   Future<void> _initializeCamera() async {
     try {
-      await _cameraService.initialize();
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        if (mounted) setState(() => _errorMessage = '未检测到相机');
+        return;
+      }
+
+      // 优先后置
+      final camera = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+
+      // Android 优化
+      _controller = CameraController(
+        camera,
+        ResolutionPreset.high,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.nv21,
+      );
+
+      await _controller!.initialize();
+
       if (mounted) {
-        setState(() {});
+        // 如果当前是初始状态，初始化完直接进入扫描
+        if (_state == ScoringState.initial) {
+          _startScanning();
+        } else {
+          setState(() {}); // 仅刷新UI
+        }
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _errorMessage = '相机初始化失败: $e';
-        });
+        setState(() => _errorMessage = '相机初始化失败: $e');
       }
     }
   }
 
-  /// 开始扫描作品码
-  Future<void> _startScanning() async {
-    if (!_cameraService.isInitialized) return;
+  /// 开始扫描（开启流）
+  void _startScanning() {
+    if (_controller == null || !_controller!.value.isInitialized) return;
 
-    // 清除上次扫描的条码缓存，准备扫描新条码
+    if (_controller!.value.isStreamingImages) return;
+
     _lastScannedCode = null;
     _lastScanTime = null;
 
@@ -89,61 +137,67 @@ class _ScoringScreenState extends State<ScoringScreen> {
       _errorMessage = null;
     });
 
-    await _cameraService.startImageStream((image) async {
-      if (_isProcessing || _state != ScoringState.scanning) return;
+    try {
+      _controller!.startImageStream((image) async {
+        if (_isProcessing || _state != ScoringState.scanning) return;
 
-      _isProcessing = true;
-      try {
-        final barcode = await _barcodeService.scanFromCameraImage(
-          image,
-          _cameraService.sensorOrientation,
-          _cameraService.isFrontCamera,
-        );
+        _isProcessing = true;
+        try {
+          final barcode = await _barcodeService.scanFromCameraImage(
+            image,
+            _controller!.description.sensorOrientation,
+            _controller!.description.lensDirection == CameraLensDirection.front,
+          );
 
-        // 确保条形码内容非null且非空
-        if (barcode != null && barcode.trim().isNotEmpty && mounted) {
-          final trimmedCode = barcode.trim();
-          final now = DateTime.now();
+          if (barcode != null && barcode.trim().isNotEmpty && mounted) {
+            final trimmedCode = barcode.trim();
+            final now = DateTime.now();
 
-          // 防止重复识别同一个条码（2秒内不重复处理同一个条码）
-          if (_lastScannedCode == trimmedCode &&
-              _lastScanTime != null &&
-              now.difference(_lastScanTime!).inMilliseconds < 2000) {
-            return;
+            // 防抖
+            if (_lastScannedCode == trimmedCode &&
+                _lastScanTime != null &&
+                now.difference(_lastScanTime!).inMilliseconds < 2000) {
+              return;
+            }
+
+            _lastScannedCode = trimmedCode;
+            _lastScanTime = now;
+
+            await _stopScanning();
+            _handleWorkCodeScanned(trimmedCode);
           }
-
-          _lastScannedCode = trimmedCode;
-          _lastScanTime = now;
-
-          await _cameraService.stopImageStream();
-          _handleWorkCodeScanned(trimmedCode);
+        } catch (e) {
+          debugPrint('Scan error: $e');
+        } finally {
+          _isProcessing = false;
         }
-      } catch (e) {
-        debugPrint('扫描错误: $e');
-      } finally {
-        _isProcessing = false;
-      }
-    });
+      });
+    } catch (e) {
+      debugPrint("Stream error: $e");
+    }
   }
 
   /// 停止扫描
   Future<void> _stopScanning() async {
-    await _cameraService.stopImageStream();
-    if (mounted) {
+    if (_controller != null && _controller!.value.isStreamingImages) {
+      try {
+        await _controller!.stopImageStream();
+      } catch (e) {
+        debugPrint("Stop stream error: $e");
+      }
+    }
+    if (mounted && _state == ScoringState.scanning) {
       setState(() {
-        if (_state == ScoringState.scanning) {
-          _state = ScoringState.initial;
-        }
+        _state = ScoringState.initial;
       });
     }
   }
 
-  /// 处理扫描到的作品码
+  /// 处理扫描结果
   void _handleWorkCodeScanned(String workCode) {
-    // 确保作品码非空
     if (workCode.isEmpty) {
       setState(() {
-        _errorMessage = '扫描到的条形码内容为空';
+        _errorMessage = '条码内容为空';
         _state = ScoringState.initial;
       });
       return;
@@ -156,15 +210,14 @@ class _ScoringScreenState extends State<ScoringScreen> {
       _scannedWorkCode = workCode;
       if (participant != null) {
         _currentParticipant = participant;
-        // 如果有之前的分数，使用之前的分数
         _score = participant.score ?? 50.0;
         _scoreController.text = _score.toStringAsFixed(1);
         _savedPhotoPath = participant.evidenceImg;
-        _photoPath = null; // 清除临时照片路径
+        _photoPath = null;
         _state = ScoringState.participantFound;
         _errorMessage = null;
       } else {
-        _errorMessage = '未找到作品码为"$workCode"的选手';
+        _errorMessage = '未找到作品码: $workCode';
         _currentParticipant = null;
         _state = ScoringState.initial;
       }
@@ -180,11 +233,19 @@ class _ScoringScreenState extends State<ScoringScreen> {
 
   /// 拍照
   Future<void> _takePhoto() async {
-    if (!_cameraService.isInitialized) return;
+    if (_controller == null || !_controller!.value.isInitialized) return;
 
     try {
-      final xFile = await _cameraService.takePicture();
-      if (xFile != null && mounted) {
+      if (_controller!.value.isTakingPicture) return;
+
+      if (_controller!.value.isStreamingImages) {
+        await _controller!.stopImageStream();
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+
+      final xFile = await _controller!.takePicture();
+
+      if (mounted) {
         setState(() {
           _photoPath = xFile.path;
           _state = ScoringState.photoTaken;
@@ -207,52 +268,54 @@ class _ScoringScreenState extends State<ScoringScreen> {
     });
   }
 
-  /// 更新分数（从输入框）
+  // --- 业务逻辑 ---
+
   void _updateScoreFromInput(String value) {
     final parsed = double.tryParse(value);
-    if (parsed != null && parsed >= 0 && parsed <= 100) {
-      _score = parsed;
+    if (parsed != null) {
+      if (parsed > 99) {
+        _score = 99.0;
+        _scoreController.text = '99';
+        _scoreController.selection = TextSelection.fromPosition(
+          TextPosition(offset: 2),
+        );
+      } else if (parsed < 0) {
+        _score = 0.0;
+        _scoreController.text = '0';
+        _scoreController.selection = TextSelection.fromPosition(
+          TextPosition(offset: 1),
+        );
+      } else {
+        _score = parsed;
+      }
     }
   }
 
-  /// 保存评分
   Future<void> _saveScore() async {
     if (_currentParticipant == null) return;
 
     final provider = context.read<ParticipantProvider>();
     final workCode = _currentParticipant!.workCode ?? _scannedWorkCode;
 
-    // 确保作品码非空
     if (workCode.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('作品码不能为空'), backgroundColor: Colors.red),
-      );
+      _showSnack('作品码不能为空', Colors.red);
       return;
     }
 
-    // 必须有照片才能保存评分
     final hasNewPhoto = _photoPath != null && _photoPath!.isNotEmpty;
     final hasExistingPhoto =
         _savedPhotoPath != null && _savedPhotoPath!.isNotEmpty;
 
     if (!hasNewPhoto && !hasExistingPhoto) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('请先拍照后再保存评分'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      _showSnack('请先拍照后再保存评分', Colors.orange);
       return;
     }
 
     try {
       String finalPhotoPath = '';
-
-      // 处理照片：如果有新拍的照片，保存并重命名
       if (hasNewPhoto) {
         finalPhotoPath = await _saveAndRenamePhoto(workCode, _score);
       } else if (hasExistingPhoto) {
-        // 如果没有新照片但有旧照片，需要重命名（因为分数可能变了）
         finalPhotoPath = await _renameExistingPhoto(
           _savedPhotoPath!,
           workCode,
@@ -266,56 +329,31 @@ class _ScoringScreenState extends State<ScoringScreen> {
         setState(() {
           _state = ScoringState.completed;
         });
+        _showSnack('评分保存成功!', Colors.green);
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '评分保存成功！选手: ${_currentParticipant!.name}, 分数: $_score',
-            ),
-            backgroundColor: Colors.green,
-          ),
-        );
-
-        // 延迟后重置状态
-        await Future.delayed(const Duration(seconds: 1));
-        if (mounted) {
-          _resetState();
-        }
+        Future.delayed(const Duration(seconds: 1), () {
+          if (mounted) _resetState();
+        });
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败: $e'), backgroundColor: Colors.red),
-        );
-      }
+      if (mounted) _showSnack('保存失败: $e', Colors.red);
     }
   }
 
-  /// 保存并重命名新拍的照片
-  /// 命名格式: 作品码_分数.jpg
   Future<String> _saveAndRenamePhoto(String workCode, double score) async {
     final evidenceDir = await _storageService.getEvidenceDirectory();
     final scoreStr = score.toStringAsFixed(1).replaceAll('.', '_');
     final newFileName = '${workCode}_$scoreStr.jpg';
     final newPath = path.join(evidenceDir, newFileName);
 
-    // 删除可能存在的旧照片（同一作品码的）
     await _deleteOldPhotosForWorkCode(evidenceDir, workCode);
-
-    // 复制新照片到目标位置
     await _fileService.copyFile(_photoPath!, newPath);
 
-    // 删除临时照片
-    try {
-      await _fileService.deleteFile(_photoPath!);
-    } catch (e) {
-      debugPrint('删除临时照片失败: $e');
-    }
+    _fileService.deleteFile(_photoPath!).catchError((_) {});
 
     return newPath;
   }
 
-  /// 重命名已存在的照片（分数更新时）
   Future<String> _renameExistingPhoto(
     String oldPath,
     String workCode,
@@ -326,27 +364,20 @@ class _ScoringScreenState extends State<ScoringScreen> {
     final newFileName = '${workCode}_$scoreStr.jpg';
     final newPath = path.join(evidenceDir, newFileName);
 
-    // 如果路径相同，不需要重命名
-    if (oldPath == newPath) {
-      return oldPath;
-    }
+    if (oldPath == newPath) return oldPath;
 
-    // 检查旧照片是否存在
     if (await _fileService.fileExists(oldPath)) {
       try {
-        // 重命名文件
         await _fileService.renameFile(oldPath, newPath);
         return newPath;
       } catch (e) {
-        debugPrint('重命名照片失败: $e');
+        debugPrint('Rename failed: $e');
         return oldPath;
       }
     }
-
     return oldPath;
   }
 
-  /// 删除同一作品码的旧照片
   Future<void> _deleteOldPhotosForWorkCode(
     String evidenceDir,
     String workCode,
@@ -363,18 +394,20 @@ class _ScoringScreenState extends State<ScoringScreen> {
         }
       }
     } catch (e) {
-      debugPrint('删除旧照片失败: $e');
+      debugPrint('Delete old photos error: $e');
     }
   }
 
-  /// 重置状态
   void _resetState() {
-    // 清除条码缓存
     _lastScannedCode = null;
     _lastScanTime = null;
 
+    if (_controller != null && _controller!.value.isStreamingImages) {
+      _controller!.stopImageStream().catchError((e) {});
+    }
+
     setState(() {
-      _state = ScoringState.initial;
+      _state = ScoringState.scanning;
       _currentParticipant = null;
       _score = 50.0;
       _scoreController.text = '50.0';
@@ -383,24 +416,44 @@ class _ScoringScreenState extends State<ScoringScreen> {
       _errorMessage = null;
       _scannedWorkCode = '';
     });
+
+    _startScanning();
   }
+
+  void _showSnack(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: color,
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  // --- UI 构建 ---
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('评分'),
-        centerTitle: true,
-        actions: [
-          if (_state != ScoringState.initial)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _resetState,
-              tooltip: '重新开始',
-            ),
-        ],
+    // 1. 添加 GestureDetector 点击空白收起键盘
+    return GestureDetector(
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      child: Scaffold(
+        resizeToAvoidBottomInset: true, // 保持为 true，通过 ScrollView 解决溢出
+        appBar: AppBar(
+          title: const Text('评分'),
+          centerTitle: true,
+          actions: [
+            if (_state != ScoringState.initial &&
+                _state != ScoringState.scanning)
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _resetState,
+                tooltip: '重新开始',
+              ),
+          ],
+        ),
+        body: _buildBody(),
       ),
-      body: _buildBody(),
     );
   }
 
@@ -421,598 +474,316 @@ class _ScoringScreenState extends State<ScoringScreen> {
     }
   }
 
-  /// 初始界面
   Widget _buildInitialView() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.qr_code_scanner, size: 100, color: Colors.blue),
-          const SizedBox(height: 24),
-          const Text(
-            '评分模块',
-            style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            '扫描作品码开始评分',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
-          ),
-          if (_errorMessage != null) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              margin: const EdgeInsets.symmetric(horizontal: 32),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red.shade200),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.error_outline, color: Colors.red.shade700),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      _errorMessage!,
-                      style: TextStyle(color: Colors.red.shade700),
-                    ),
+          if (_errorMessage != null)
+            Column(
+              children: [
+                Icon(Icons.error, size: 80, color: Colors.red[300]),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Colors.red),
                   ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 40),
-          ElevatedButton.icon(
-            onPressed: _cameraService.isInitialized ? _startScanning : null,
-            icon: const Icon(Icons.camera_alt),
-            label: const Text('开始扫描'),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              textStyle: const TextStyle(fontSize: 18),
-            ),
-          ),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: _showManualInputDialog,
-            icon: const Icon(Icons.edit),
-            label: const Text('手动输入作品码'),
-          ),
+                ),
+                ElevatedButton(
+                  onPressed: _initializeCamera,
+                  child: const Text('重试相机'),
+                ),
+              ],
+            )
+          else
+            const CircularProgressIndicator(),
         ],
       ),
     );
   }
 
-  /// 扫描界面
   Widget _buildScanningView() {
     return Column(
       children: [
         Expanded(
           child: Stack(
+            fit: StackFit.expand,
             children: [
-              // 相机预览
-              if (_cameraService.isInitialized &&
-                  _cameraService.controller != null)
-                SizedBox(
-                  width: double.infinity,
-                  child: CameraPreview(_cameraService.controller!),
-                )
+              if (_controller != null && _controller!.value.isInitialized)
+                CameraPreview(_controller!)
               else
                 const Center(child: CircularProgressIndicator()),
-
-              // 扫描框
               Center(
                 child: Container(
                   width: 280,
                   height: 280,
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.blue, width: 3),
+                    border: Border.all(color: Colors.blueAccent, width: 2),
                     borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Stack(
-                    children: [
-                      // 四角装饰
-                      ...List.generate(4, (index) {
-                        final isTop = index < 2;
-                        final isLeft = index % 2 == 0;
-                        return Positioned(
-                          top: isTop ? 0 : null,
-                          bottom: isTop ? null : 0,
-                          left: isLeft ? 0 : null,
-                          right: isLeft ? null : 0,
-                          child: Container(
-                            width: 30,
-                            height: 30,
-                            decoration: BoxDecoration(
-                              border: Border(
-                                top: isTop
-                                    ? const BorderSide(
-                                        color: Colors.blue,
-                                        width: 4,
-                                      )
-                                    : BorderSide.none,
-                                bottom: isTop
-                                    ? BorderSide.none
-                                    : const BorderSide(
-                                        color: Colors.blue,
-                                        width: 4,
-                                      ),
-                                left: isLeft
-                                    ? const BorderSide(
-                                        color: Colors.blue,
-                                        width: 4,
-                                      )
-                                    : BorderSide.none,
-                                right: isLeft
-                                    ? BorderSide.none
-                                    : const BorderSide(
-                                        color: Colors.blue,
-                                        width: 4,
-                                      ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }),
-                    ],
                   ),
                 ),
               ),
-
-              // 提示文字
-              Positioned(
-                bottom: 50,
+              const Positioned(
+                bottom: 60,
                 left: 0,
                 right: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                  color: Colors.black54,
-                  child: const Text(
-                    '将作品码放入框内扫描',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white, fontSize: 16),
+                child: Center(
+                  child: Text(
+                    '扫描作品码',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      shadows: [Shadow(blurRadius: 4, color: Colors.black)],
+                    ),
                   ),
                 ),
               ),
             ],
           ),
         ),
-        // 底部按钮
         Container(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _stopScanning,
-                  child: const Text('取消'),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _showManualInputDialog,
-                  icon: const Icon(Icons.edit),
-                  label: const Text('手动输入'),
-                ),
-              ),
-            ],
+          padding: const EdgeInsets.all(24),
+          child: OutlinedButton.icon(
+            onPressed: _showManualInputDialog,
+            icon: const Icon(Icons.keyboard),
+            label: const Text('手动输入作品码'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 50),
+            ),
           ),
         ),
       ],
     );
   }
 
-  /// 找到选手界面
   Widget _buildParticipantFoundView() {
-    final participant = _currentParticipant!;
+    final p = _currentParticipant!;
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.verified, size: 80, color: Colors.green),
+            const SizedBox(height: 24),
+            Text(
+              p.name,
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '编号: ${p.memberCode}',
+              style: const TextStyle(fontSize: 18, color: Colors.grey),
+            ),
+            const SizedBox(height: 40),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _resetState,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    child: const Text('取消'),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _enterScoringMode,
+                    icon: const Icon(Icons.camera_alt),
+                    label: const Text('开始评分'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- 修改点：使用 SingleChildScrollView + 固定高度 解决溢出和扁平化问题 ---
+  Widget _buildScoringView() {
+    // 使用屏幕宽度的 4/3 作为相机高度，保持标准比例，防止被压扁
+    final cameraHeight = MediaQuery.of(context).size.width * 1.33;
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          // 选手信息卡片
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  const Icon(Icons.check_circle, size: 60, color: Colors.green),
-                  const SizedBox(height: 16),
-                  const Text(
-                    '找到选手',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          // 顶部信息
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            color: Colors.blue.shade50,
+            child: Row(
+              children: [
+                const Icon(Icons.person_outline, color: Colors.blue),
+                const SizedBox(width: 8),
+                Text(
+                  '${_currentParticipant?.name} (${_currentParticipant?.memberCode})',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
                   ),
-                  const SizedBox(height: 24),
-                  _buildInfoRow('姓名', participant.name),
-                  _buildInfoRow('参赛编号', participant.memberCode),
-                  _buildInfoRow('组别', participant.group ?? '未分组'),
-                  _buildInfoRow('领队', participant.leaderName ?? '无'),
-                  _buildInfoRow(
-                    '作品码',
-                    participant.workCode ?? _scannedWorkCode,
-                  ),
-                  _buildInfoRow(
-                    '检录状态',
-                    participant.checkStatus == 1 ? '已检录' : '未检录',
-                  ),
-                  if (participant.score != null)
-                    _buildInfoRow('当前分数', participant.score!.toString()),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 24),
-          // 操作按钮
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _resetState,
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+
+          // 相机预览 - 固定高度，移除 Expanded
+          SizedBox(
+            width: double.infinity,
+            height: cameraHeight,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (_controller != null && _controller!.value.isInitialized)
+                  // 使用 FittedBox 确保填充且不拉伸
+                  FittedBox(
+                    fit: BoxFit.cover,
+                    child: SizedBox(
+                      width: _controller!.value.previewSize!.height,
+                      height: _controller!.value.previewSize!.width,
+                      child: CameraPreview(_controller!),
+                    ),
+                  )
+                else
+                  const Center(child: Text("相机未就绪")),
+
+                // 拍照按钮
+                Positioned(
+                  bottom: 20,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: FloatingActionButton.large(
+                      onPressed: _takePhoto,
+                      backgroundColor: Colors.white,
+                      child: const Icon(
+                        Icons.camera,
+                        size: 50,
+                        color: Colors.blue,
+                      ),
+                    ),
                   ),
-                  child: const Text('取消'),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                flex: 2,
-                child: ElevatedButton.icon(
-                  onPressed: _enterScoringMode,
-                  icon: const Icon(Icons.star),
-                  label: const Text('开始评分'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
+
+          // 分数输入
+          _buildScorePanel(),
+
+          // 底部填充，确保键盘弹出时能滚动到底部
+          const SizedBox(height: 20),
         ],
       ),
     );
   }
 
-  /// 评分界面（拍照+调分）
-  Widget _buildScoringView() {
-    return Column(
-      children: [
-        // 顶部选手信息
-        Container(
-          padding: const EdgeInsets.all(16),
-          color: Colors.blue.shade50,
-          child: Row(
-            children: [
-              const Icon(Icons.person, color: Colors.blue),
-              const SizedBox(width: 8),
-              Text(
-                '${_currentParticipant!.name} (${_currentParticipant!.memberCode})',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-        // 相机预览（拍照区域）
-        Expanded(
-          flex: 2,
-          child: Stack(
-            children: [
-              if (_cameraService.isInitialized &&
-                  _cameraService.controller != null)
-                SizedBox(
-                  width: double.infinity,
-                  child: CameraPreview(_cameraService.controller!),
-                )
-              else
-                const Center(child: CircularProgressIndicator()),
-
-              // 拍照按钮
-              Positioned(
-                bottom: 20,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: GestureDetector(
-                    onTap: _takePhoto,
-                    child: Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white,
-                        border: Border.all(color: Colors.blue, width: 4),
-                      ),
-                      child: const Icon(
-                        Icons.camera_alt,
-                        size: 40,
-                        color: Colors.blue,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        // 分数调节区域
-        Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              const Text(
-                '评分',
-                style: TextStyle(fontSize: 16, color: Colors.grey),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: 200,
-                child: TextField(
-                  controller: _scoreController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue,
-                  ),
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: Colors.blue.shade50,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: Colors.blue,
-                        width: 2,
-                      ),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: Colors.blue,
-                        width: 2,
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: Colors.blue,
-                        width: 3,
-                      ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                  ),
-                  onChanged: _updateScoreFromInput,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '分数范围: 0 - 100',
-                style: TextStyle(color: Colors.grey.shade600),
-              ),
-            ],
-          ),
-        ),
-        // 底部按钮
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () {
-                    setState(() {
-                      _state = ScoringState.participantFound;
-                    });
-                  },
-                  child: const Text('返回'),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                flex: 2,
-                child: ElevatedButton.icon(
-                  onPressed: _saveScore,
-                  icon: const Icon(Icons.save),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                  label: const Text('保存评分'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// 拍照完成界面
+  // --- 修改点：同样使用 SingleChildScrollView 解决溢出 ---
   Widget _buildPhotoTakenView() {
-    return Column(
-      children: [
-        // 顶部选手信息
-        Container(
-          padding: const EdgeInsets.all(16),
-          color: Colors.green.shade50,
-          child: Row(
-            children: [
-              const Icon(Icons.check_circle, color: Colors.green),
-              const SizedBox(width: 8),
-              Text(
-                '${_currentParticipant!.name} - 已拍照',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+    final imageHeight = MediaQuery.of(context).size.width * 1.33;
+
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // 照片预览 - 固定高度
+          SizedBox(
+            width: double.infinity,
+            height: imageHeight,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (_photoPath != null)
+                  Image.file(File(_photoPath!), fit: BoxFit.cover),
+                Positioned(
+                  bottom: 16,
+                  right: 16,
+                  child: FloatingActionButton.small(
+                    onPressed: _retakePhoto,
+                    backgroundColor: Colors.white,
+                    child: const Icon(Icons.refresh, color: Colors.black),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        // 照片预览
-        Expanded(
-          flex: 2,
-          child: _photoPath != null
-              ? Image.file(File(_photoPath!), fit: BoxFit.contain)
-              : const Center(child: Text('照片加载失败')),
-        ),
-        // 分数输入区域
-        Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              const Text(
-                '评分',
-                style: TextStyle(fontSize: 16, color: Colors.grey),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: 200,
-                child: TextField(
-                  controller: _scoreController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green,
-                  ),
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: Colors.green.shade50,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: Colors.green,
-                        width: 2,
-                      ),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: Colors.green,
-                        width: 2,
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: Colors.green,
-                        width: 3,
-                      ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                  ),
-                  onChanged: _updateScoreFromInput,
+
+          // 分数输入
+          _buildScorePanel(),
+
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _saveScore,
+                icon: const Icon(Icons.check),
+                label: const Text('确认保存'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                '分数范围: 0 - 100',
-                style: TextStyle(color: Colors.grey.shade600),
-              ),
-            ],
+            ),
           ),
-        ),
-        // 底部按钮
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _retakePhoto,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('重拍'),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                flex: 2,
-                child: ElevatedButton.icon(
-                  onPressed: _saveScore,
-                  icon: const Icon(Icons.save),
-                  label: const Text('保存评分'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+
+          const SizedBox(height: 20),
+        ],
+      ),
     );
   }
 
-  /// 完成界面
   Widget _buildCompletedView() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.check_circle, size: 100, color: Colors.green),
-          const SizedBox(height: 24),
-          const Text(
-            '评分完成！',
-            style: TextStyle(
-              fontSize: 28,
+          const Icon(Icons.task_alt, size: 100, color: Colors.green),
+          const SizedBox(height: 20),
+          const Text('评分保存成功', style: TextStyle(fontSize: 24)),
+          const SizedBox(height: 10),
+          Text(
+            '${_score.toStringAsFixed(1)}分',
+            style: const TextStyle(
+              fontSize: 40,
               fontWeight: FontWeight.bold,
               color: Colors.green,
             ),
           ),
-          const SizedBox(height: 16),
-          Text(
-            '${_currentParticipant?.name ?? ''} - ${_score.toStringAsFixed(1)} 分',
-            style: const TextStyle(fontSize: 20),
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildScorePanel() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      color: Colors.white,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          const Text('请输入分数 (0-99)', style: TextStyle(color: Colors.grey)),
+          const SizedBox(height: 10),
           SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Colors.grey,
-                fontWeight: FontWeight.w500,
+            width: 150,
+            child: TextField(
+              controller: _scoreController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
               ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold),
+              decoration: const InputDecoration(border: UnderlineInputBorder()),
+              onChanged: _updateScoreFromInput,
             ),
           ),
         ],
@@ -1020,10 +791,8 @@ class _ScoringScreenState extends State<ScoringScreen> {
     );
   }
 
-  /// 手动输入作品码对话框
   void _showManualInputDialog() {
     final controller = TextEditingController();
-
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1035,12 +804,9 @@ class _ScoringScreenState extends State<ScoringScreen> {
             hintText: '请输入作品码',
             border: OutlineInputBorder(),
           ),
-          onSubmitted: (value) {
-            final trimmedValue = value.trim();
-            if (trimmedValue.isNotEmpty) {
-              Navigator.pop(ctx);
-              _handleWorkCodeScanned(trimmedValue);
-            }
+          onSubmitted: (val) {
+            Navigator.pop(ctx);
+            _handleWorkCodeScanned(val.trim());
           },
         ),
         actions: [
@@ -1050,11 +816,8 @@ class _ScoringScreenState extends State<ScoringScreen> {
           ),
           ElevatedButton(
             onPressed: () {
-              final trimmedValue = controller.text.trim();
-              if (trimmedValue.isNotEmpty) {
-                Navigator.pop(ctx);
-                _handleWorkCodeScanned(trimmedValue);
-              }
+              Navigator.pop(ctx);
+              _handleWorkCodeScanned(controller.text.trim());
             },
             child: const Text('确定'),
           ),

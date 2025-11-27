@@ -1,9 +1,8 @@
-import 'dart:ui' show Offset;
+import 'dart:async';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-/// 相机服务
-/// 封装相机控制，支持实时预览、扫码和拍照
+/// 相机服务 (Android 专用优化版)
 class CameraService {
   CameraController? _controller;
   List<CameraDescription>? _cameras;
@@ -13,48 +12,42 @@ class CameraService {
   CameraController? get controller => _controller;
 
   /// 是否已初始化
-  bool get isInitialized => _isInitialized;
+  bool get isInitialized => _isInitialized && _controller != null;
 
   /// 获取相机传感器方向
-  int get sensorOrientation => _controller?.description.sensorOrientation ?? 0;
+  int get sensorOrientation => _controller?.description.sensorOrientation ?? 90;
 
   /// 是否是前置摄像头
   bool get isFrontCamera =>
       _controller?.description.lensDirection == CameraLensDirection.front;
 
   /// 初始化相机
-  /// [preferBackCamera] 优先使用后置摄像头
   Future<bool> initialize({bool preferBackCamera = true}) async {
     try {
-      // 请求相机权限
-      final status = await Permission.camera.request();
-      if (!status.isGranted) {
-        print('相机权限未授予');
+      // 1. 请求权限
+      if (!await Permission.camera.request().isGranted) {
         return false;
       }
 
-      // 获取可用相机列表
+      // 2. 获取相机
       _cameras = await availableCameras();
       if (_cameras == null || _cameras!.isEmpty) {
-        print('没有可用的相机');
         return false;
       }
 
-      // 选择相机
-      CameraDescription selectedCamera;
-      if (preferBackCamera) {
-        selectedCamera = _cameras!.firstWhere(
-          (camera) => camera.lensDirection == CameraLensDirection.back,
-          orElse: () => _cameras!.first,
-        );
-      } else {
-        selectedCamera = _cameras!.firstWhere(
-          (camera) => camera.lensDirection == CameraLensDirection.front,
-          orElse: () => _cameras!.first,
-        );
-      }
+      // 3. 选择前后置
+      final cameraDirection = preferBackCamera
+          ? CameraLensDirection.back
+          : CameraLensDirection.front;
 
-      // 创建控制器
+      final selectedCamera = _cameras!.firstWhere(
+        (c) => c.lensDirection == cameraDirection,
+        orElse: () => _cameras!.first,
+      );
+
+      // 4. 创建控制器
+      // Android 核心优化：强制使用 nv21，这是 ML Kit 在 Android 上必须的格式
+      // 分辨率设为 high，兼顾扫码精度和拍照清晰度
       _controller = CameraController(
         selectedCamera,
         ResolutionPreset.high,
@@ -62,45 +55,61 @@ class CameraService {
         imageFormatGroup: ImageFormatGroup.nv21,
       );
 
-      // 初始化控制器
+      // 5. 初始化
       await _controller!.initialize();
       _isInitialized = true;
 
       return true;
     } catch (e) {
-      print('初始化相机失败: $e');
+      print('相机初始化失败: $e');
       _isInitialized = false;
       return false;
     }
   }
 
-  /// 开始图像流（用于实时扫码）
+  /// 开始图像流 (扫码用)
   Future<void> startImageStream(void Function(CameraImage) onImage) async {
-    if (_controller == null || !_isInitialized) {
-      throw Exception('相机未初始化');
-    }
+    if (_controller == null || !_isInitialized) return;
 
-    await _controller!.startImageStream(onImage);
+    // 防止重复启动导致 Crash
+    if (_controller!.value.isStreamingImages) return;
+
+    try {
+      await _controller!.startImageStream(onImage);
+    } catch (e) {
+      print('启动流失败: $e');
+    }
   }
 
   /// 停止图像流
   Future<void> stopImageStream() async {
     if (_controller == null || !_isInitialized) return;
 
+    // 关键修复：只有在流运行中才停止，否则 Android 会抛出 CameraException
+    if (!_controller!.value.isStreamingImages) return;
+
     try {
       await _controller!.stopImageStream();
     } catch (e) {
-      print('停止图像流失败: $e');
+      print('停止流失败: $e');
     }
   }
 
   /// 拍照
+  /// Android 关键修复：拍照前必须停止 ImageStream，否则会 Crash 或卡死
   Future<XFile?> takePicture() async {
-    if (_controller == null || !_isInitialized) {
-      throw Exception('相机未初始化');
-    }
+    if (_controller == null || !_isInitialized) return null;
 
     try {
+      // 1. 如果正在扫码(流开启中)，必须先停止流
+      // 注意：这会导致画面瞬间卡顿一下，这是 Android 硬件限制正常的
+      if (_controller!.value.isStreamingImages) {
+        await _controller!.stopImageStream();
+        // 稍微给一点缓冲时间让相机硬件状态复位
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+
+      // 2. 拍照
       final file = await _controller!.takePicture();
       return file;
     } catch (e) {
@@ -109,67 +118,31 @@ class CameraService {
     }
   }
 
-  /// 切换相机
+  /// 切换前后置
   Future<bool> switchCamera() async {
-    if (_cameras == null || _cameras!.length < 2) {
-      return false;
-    }
+    if (_cameras == null || _cameras!.length < 2) return false;
 
-    try {
-      final currentDirection = _controller?.description.lensDirection;
-      final newDirection = currentDirection == CameraLensDirection.back
-          ? CameraLensDirection.front
-          : CameraLensDirection.back;
+    // 获取当前反向的镜头方向
+    final newDirection = isFrontCamera
+        ? CameraLensDirection.back
+        : CameraLensDirection.front;
 
-      final newCamera = _cameras!.firstWhere(
-        (camera) => camera.lensDirection == newDirection,
-        orElse: () => _cameras!.first,
-      );
+    // 释放旧控制器
+    await dispose();
 
-      await dispose();
-
-      _controller = CameraController(
-        newCamera,
-        ResolutionPreset.high,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.nv21,
-      );
-
-      await _controller!.initialize();
-      _isInitialized = true;
-
-      return true;
-    } catch (e) {
-      print('切换相机失败: $e');
-      return false;
-    }
-  }
-
-  /// 设置闪光灯模式
-  Future<void> setFlashMode(FlashMode mode) async {
-    if (_controller == null || !_isInitialized) return;
-
-    try {
-      await _controller!.setFlashMode(mode);
-    } catch (e) {
-      print('设置闪光灯失败: $e');
-    }
-  }
-
-  /// 设置对焦点
-  Future<void> setFocusPoint(double x, double y) async {
-    if (_controller == null || !_isInitialized) return;
-
-    try {
-      await _controller!.setFocusPoint(Offset(x, y));
-    } catch (e) {
-      print('设置对焦点失败: $e');
-    }
+    // 重新初始化
+    return initialize(
+      preferBackCamera: newDirection == CameraLensDirection.back,
+    );
   }
 
   /// 释放资源
   Future<void> dispose() async {
     _isInitialized = false;
+    // 释放前先确保流停止
+    if (_controller != null && _controller!.value.isStreamingImages) {
+      await _controller!.stopImageStream();
+    }
     await _controller?.dispose();
     _controller = null;
   }

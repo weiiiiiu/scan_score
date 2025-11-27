@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/participant.dart';
 import '../services/csv_service.dart';
@@ -64,6 +65,7 @@ class ParticipantProvider extends ChangeNotifier {
   }
 
   /// 导入新的 CSV 文件
+  /// 会先清空所有旧数据（包括评分照片）再导入新数据
   Future<bool> importCsv() async {
     _isLoading = true;
     _error = null;
@@ -78,6 +80,9 @@ class ParticipantProvider extends ChangeNotifier {
         return false;
       }
 
+      // 导入成功后，清空旧的评分照片
+      await _clearEvidencePhotos();
+
       // 重新加载数据
       await loadData();
       return true;
@@ -87,6 +92,25 @@ class ParticipantProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       return false;
+    }
+  }
+
+  /// 清空所有评分照片
+  Future<void> _clearEvidencePhotos() async {
+    try {
+      final evidenceDir = await _storageService.getEvidenceDirectory();
+      final dir = Directory(evidenceDir);
+      if (await dir.exists()) {
+        // 删除目录下所有文件
+        await for (final entity in dir.list()) {
+          if (entity is File) {
+            await entity.delete();
+          }
+        }
+      }
+    } catch (e) {
+      print('清空评分照片失败: $e');
+      // 不抛出异常，继续执行
     }
   }
 
@@ -148,8 +172,7 @@ class ParticipantProvider extends ChangeNotifier {
     final lowerQuery = query.toLowerCase();
     return _participants.where((p) {
       return p.name.toLowerCase().contains(lowerQuery) ||
-          p.memberCode.toLowerCase().contains(lowerQuery) ||
-          (p.workCode?.toLowerCase().contains(lowerQuery) ?? false);
+          p.memberCode.toLowerCase().contains(lowerQuery);
     }).toList();
   }
 

@@ -1,9 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:path/path.dart' as path;
-import 'package:archive/archive.dart';
 import '../../providers/participant_provider.dart';
 import '../../models/participant.dart';
 import '../../services/storage_service.dart';
@@ -25,7 +22,6 @@ class _ManagementScreenState extends State<ManagementScreen> {
   String _searchQuery = '';
   String _filterGroup = '全部';
   String _filterStatus = '全部';
-  bool _isExporting = false;
 
   List<String> get _groups {
     final provider = context.read<ParticipantProvider>();
@@ -48,8 +44,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
           .where(
             (p) =>
                 p.name.toLowerCase().contains(query) ||
-                p.memberCode.toLowerCase().contains(query) ||
-                (p.workCode?.toLowerCase().contains(query) ?? false),
+                p.memberCode.toLowerCase().contains(query),
           )
           .toList();
     }
@@ -92,17 +87,6 @@ class _ManagementScreenState extends State<ManagementScreen> {
             onSelected: _handleMenuAction,
             itemBuilder: (context) => [
               const PopupMenuItem(
-                value: 'export_photos',
-                child: Row(
-                  children: [
-                    Icon(Icons.photo_library, color: Colors.blue),
-                    SizedBox(width: 8),
-                    Text('导出评分照片'),
-                  ],
-                ),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
                 value: 'clear_all_checkin',
                 child: Text('清除所有检录状态'),
               ),
@@ -138,7 +122,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
           // 搜索框
           TextField(
             decoration: InputDecoration(
-              hintText: '搜索姓名、参赛编号或作品码',
+              hintText: '搜索姓名、参赛编号',
               prefixIcon: const Icon(Icons.search),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -563,9 +547,6 @@ class _ManagementScreenState extends State<ManagementScreen> {
 
   void _handleMenuAction(String action) {
     switch (action) {
-      case 'export_photos':
-        _exportPhotos();
-        break;
       case 'clear_all_checkin':
         _showConfirmDialog(
           '确定清除所有检录状态吗？',
@@ -587,315 +568,6 @@ class _ManagementScreenState extends State<ManagementScreen> {
           () => _clearAllData(),
         );
         break;
-    }
-  }
-
-  /// 导出评分照片
-  Future<void> _exportPhotos() async {
-    if (_isExporting) return;
-
-    setState(() {
-      _isExporting = true;
-    });
-
-    try {
-      // 获取评分照片目录
-      final evidenceDir = await _storageService.getEvidenceDirectory();
-      final photoFiles = await _fileService.listFiles(
-        evidenceDir,
-        extension: '.jpg',
-      );
-
-      if (photoFiles.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('没有找到评分照片'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
-
-      // 显示导出选项对话框
-      if (mounted) {
-        _showExportOptionsDialog(photoFiles);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isExporting = false;
-        });
-      }
-    }
-  }
-
-  /// 显示导出选项对话框
-  void _showExportOptionsDialog(List<String> photoFiles) {
-    // 解析照片信息
-    final photoInfoList = <Map<String, dynamic>>[];
-    for (final filePath in photoFiles) {
-      final fileName = path.basenameWithoutExtension(filePath);
-      // 文件名格式: 作品码_分数（分数的小数点替换为下划线）
-      // 例如: 88250001_85_5.jpg 表示作品码88250001，分数85.5
-      final parts = fileName.split('_');
-      if (parts.length >= 2) {
-        final workCode = parts[0];
-        // 分数部分可能是 "85_5" 格式，需要还原为 "85.5"
-        String scoreStr;
-        if (parts.length >= 3) {
-          scoreStr = '${parts[1]}.${parts[2]}';
-        } else {
-          scoreStr = parts[1];
-        }
-        final score = double.tryParse(scoreStr);
-
-        photoInfoList.add({
-          'filePath': filePath,
-          'fileName': path.basename(filePath),
-          'workCode': workCode,
-          'score': score,
-          'scoreDisplay': score?.toStringAsFixed(1) ?? scoreStr,
-        });
-      }
-    }
-
-    // 按作品码排序
-    photoInfoList.sort(
-      (a, b) => (a['workCode'] as String).compareTo(b['workCode'] as String),
-    );
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.4,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (context, scrollController) => Column(
-          children: [
-            // 标题栏
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(20),
-                ),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.photo_library,
-                        color: Colors.blue,
-                        size: 28,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              '导出评分照片',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              '共 ${photoInfoList.length} 张照片',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            // 照片列表
-            Expanded(
-              child: ListView.builder(
-                controller: scrollController,
-                padding: const EdgeInsets.all(8),
-                itemCount: photoInfoList.length,
-                itemBuilder: (context, index) {
-                  final info = photoInfoList[index];
-                  return Card(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    child: ListTile(
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.file(
-                          File(info['filePath']),
-                          width: 60,
-                          height: 60,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            width: 60,
-                            height: 60,
-                            color: Colors.grey.shade200,
-                            child: const Icon(Icons.broken_image),
-                          ),
-                        ),
-                      ),
-                      title: Text(
-                        '作品码: ${info['workCode']}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Text('分数: ${info['scoreDisplay']}'),
-                      trailing: Text(
-                        info['fileName'],
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            // 导出按钮
-            Container(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('取消'),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _doExportPhotos(photoFiles);
-                      },
-                      icon: const Icon(Icons.share),
-                      label: const Text('导出全部照片'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 执行导出照片
-  Future<void> _doExportPhotos(List<String> photoFiles) async {
-    setState(() {
-      _isExporting = true;
-    });
-
-    // 显示进度对话框
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        content: Row(
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(width: 20),
-            Text('正在准备导出 ${photoFiles.length} 张照片...'),
-          ],
-        ),
-      ),
-    );
-
-    try {
-      // 创建压缩文件
-      final tempDir = await _storageService.getTempDirectory();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final zipFilePath = '${tempDir.path}/评分照片_$timestamp.zip';
-
-      // 使用 archive 包创建 zip 文件
-      final archive = Archive();
-
-      for (final filePath in photoFiles) {
-        final file = File(filePath);
-        if (await file.exists()) {
-          final bytes = await file.readAsBytes();
-          final fileName = path.basename(filePath);
-          archive.addFile(ArchiveFile(fileName, bytes.length, bytes));
-        }
-      }
-
-      // 编码并保存 zip 文件
-      final zipEncoder = ZipEncoder();
-      final zipData = zipEncoder.encode(archive);
-      if (zipData != null) {
-        final zipFile = File(zipFilePath);
-        await zipFile.writeAsBytes(zipData);
-
-        // 关闭进度对话框
-        if (mounted) {
-          Navigator.of(context).pop();
-        }
-
-        // 使用分享功能导出
-        await Share.shareXFiles(
-          [XFile(zipFilePath)],
-          subject: '评分照片导出',
-          text: '共 ${photoFiles.length} 张评分照片',
-        );
-
-        // 删除临时文件
-        try {
-          await File(zipFilePath).delete();
-        } catch (_) {}
-      }
-    } catch (e) {
-      // 关闭进度对话框
-      if (mounted) {
-        Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isExporting = false;
-        });
-      }
     }
   }
 
