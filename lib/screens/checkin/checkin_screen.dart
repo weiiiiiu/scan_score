@@ -139,6 +139,20 @@ class _CheckinScreenState extends State<CheckinScreen>
     });
   }
 
+  // 验证选手码格式：88开头，总共8位数字
+  bool _isValidMemberCode(String code) {
+    return code.length == 8 &&
+        code.startsWith('88') &&
+        RegExp(r'^\d{8}$').hasMatch(code);
+  }
+
+  // 验证作品码格式：99开头，总共8位数字
+  bool _isValidWorkCode(String code) {
+    return code.length == 8 &&
+        code.startsWith('99') &&
+        RegExp(r'^\d{8}$').hasMatch(code);
+  }
+
   void _routeScannedCode(String code) {
     final now = DateTime.now();
 
@@ -148,6 +162,23 @@ class _CheckinScreenState extends State<CheckinScreen>
         _lastScanTime != null &&
         now.difference(_lastScanTime!).inMilliseconds < 1500) {
       return;
+    }
+
+    // 根据当前状态验证条码格式
+    if (_state == CheckinState.scanningMember) {
+      // 扫描选手码时，必须是88开头的8位数字
+      if (!_isValidMemberCode(code)) {
+        // 格式不对，静默忽略，继续扫描
+        debugPrint('忽略无效选手码: $code (需要88开头的8位数字)');
+        return;
+      }
+    } else if (_state == CheckinState.scanningWork) {
+      // 扫描作品码时，必须是99开头的8位数字
+      if (!_isValidWorkCode(code)) {
+        // 格式不对，静默忽略，继续扫描
+        debugPrint('忽略无效作品码: $code (需要99开头的8位数字)');
+        return;
+      }
     }
 
     // 更新记录
