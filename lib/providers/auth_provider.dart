@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 
-/// 简单密码验证
+/// 密码验证
 class AuthProvider extends ChangeNotifier {
-  static const String _password = 'hlink';
+  static const String _password = 'admin';
 
   /// 验证密码
   bool verifyPassword(String password) {

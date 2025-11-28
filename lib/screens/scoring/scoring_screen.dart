@@ -280,11 +280,11 @@ class _ScoringScreenState extends State<ScoringScreen>
   void _updateScoreFromInput(String value) {
     final parsed = double.tryParse(value);
     if (parsed != null) {
-      if (parsed > 99) {
-        _score = 99.0;
-        _scoreController.text = '99';
+      if (parsed > 100) {
+        _score = 100.0;
+        _scoreController.text = '100';
         _scoreController.selection = TextSelection.fromPosition(
-          const TextPosition(offset: 2),
+          const TextPosition(offset: 3),
         );
       } else if (parsed < 0) {
         _score = 0.0;
@@ -499,7 +499,7 @@ class _ScoringScreenState extends State<ScoringScreen>
                 ),
                 ElevatedButton(
                   onPressed: _initializeCamera,
-                  child: const Text('重试相机'),
+                  child: const Text('继续评分'),
                 ),
               ],
             )
@@ -778,7 +778,7 @@ class _ScoringScreenState extends State<ScoringScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('请输入分数 (0-99)', style: TextStyle(color: Colors.grey)),
+          const Text('请输入分数 (0-100)', style: TextStyle(color: Colors.grey)),
           const SizedBox(height: 10),
           SizedBox(
             width: 150,

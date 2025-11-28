@@ -510,12 +510,49 @@ class _ManagementScreenState extends State<ManagementScreen> {
                 }
               }
 
+              // 检查分数是否改变，如果改变且有评分照片，需要重命名照片
+              String? newEvidenceImg = participant.evidenceImg;
+              final oldScore = participant.score;
+              final workCode = workCodeController.text.isEmpty
+                  ? participant.workCode
+                  : workCodeController.text;
+
+              if (score != oldScore &&
+                  participant.evidenceImg != null &&
+                  participant.evidenceImg!.isNotEmpty &&
+                  workCode != null &&
+                  workCode.isNotEmpty) {
+                try {
+                  final oldPath = participant.evidenceImg!;
+                  if (await File(oldPath).exists()) {
+                    // 构建新文件名: workCode_score.jpg
+                    final scoreStr = score != null
+                        ? (score == score.toInt()
+                              ? score.toInt().toString()
+                              : score.toStringAsFixed(1))
+                        : 'noscore';
+                    final evidenceDir = await _storageService
+                        .getEvidenceDirectory();
+                    final newFileName = '${workCode}_$scoreStr.jpg';
+                    final newPath = '$evidenceDir/$newFileName';
+
+                    // 重命名文件
+                    await _fileService.renameFile(oldPath, newPath);
+                    newEvidenceImg = newPath;
+                  }
+                } catch (e) {
+                  debugPrint('重命名评分照片失败: $e');
+                  // 继续执行，不影响其他数据更新
+                }
+              }
+
               final updated = participant.copyWith(
                 workCode: workCodeController.text.isEmpty
                     ? null
                     : workCodeController.text,
                 checkStatus: checkStatus,
                 score: score,
+                evidenceImg: newEvidenceImg,
               );
 
               try {

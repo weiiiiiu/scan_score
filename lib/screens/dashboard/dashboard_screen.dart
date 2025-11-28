@@ -145,7 +145,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         onChanged: (value) {
           // 检查是否输入了admin，进入管理页面
-          if (value.toLowerCase() == 'admin') {
+          if (value.toLowerCase() == 'hlink12138') {
             _searchController.clear();
             setState(() {
               _searchQuery = '';
