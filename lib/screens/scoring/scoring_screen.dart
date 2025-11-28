@@ -565,7 +565,6 @@ class _ScoringScreenState extends State<ScoringScreen>
   }
 
   Widget _buildParticipantFoundView() {
-    final p = _currentParticipant!;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -575,13 +574,8 @@ class _ScoringScreenState extends State<ScoringScreen>
             const Icon(Icons.verified, size: 80, color: Colors.green),
             const SizedBox(height: 24),
             Text(
-              p.name,
+              '作品码: $_scannedWorkCode',
               style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '编号: ${p.memberCode}',
-              style: const TextStyle(fontSize: 18, color: Colors.grey),
             ),
             const SizedBox(height: 40),
             Row(
@@ -630,10 +624,10 @@ class _ScoringScreenState extends State<ScoringScreen>
             color: Colors.blue.shade50,
             child: Row(
               children: [
-                const Icon(Icons.person_outline, color: Colors.blue),
+                const Icon(Icons.qr_code, color: Colors.blue),
                 const SizedBox(width: 8),
                 Text(
-                  '${_currentParticipant?.name} (${_currentParticipant?.memberCode})',
+                  '作品码: $_scannedWorkCode',
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     color: Colors.blue,
