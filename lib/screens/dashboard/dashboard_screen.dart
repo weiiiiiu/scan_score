@@ -76,7 +76,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// 构建统计卡片区域
   Widget _buildStatsSection(ParticipantProvider provider) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
           Expanded(
@@ -87,7 +87,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               color: Colors.blue,
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 6),
           Expanded(
             child: _StatCard(
               title: '已检录',
@@ -96,7 +96,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               color: Colors.green,
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 6),
           Expanded(
             child: _StatCard(
               title: '未检录',
@@ -105,7 +105,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               color: Colors.orange,
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 6),
           Expanded(
             child: _StatCard(
               title: '已评分',
@@ -233,7 +233,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 4,
             offset: const Offset(0, -2),
           ),
@@ -367,24 +367,31 @@ class _StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 32, color: color),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: color,
+            Icon(icon, size: 20, color: color),
+            const SizedBox(height: 4),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                title,
+                style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+              ),
             ),
           ],
         ),

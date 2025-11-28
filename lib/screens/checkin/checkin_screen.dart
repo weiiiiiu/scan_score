@@ -283,12 +283,6 @@ class _CheckinScreenState extends State<CheckinScreen>
       appBar: AppBar(
         title: const Text('选手检录'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.bar_chart),
-            onPressed: _showStatistics,
-          ),
-        ],
       ),
       body: Column(
         children: [
@@ -336,7 +330,7 @@ class _CheckinScreenState extends State<CheckinScreen>
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-      color: statusColor.withOpacity(0.1),
+      color: statusColor.withValues(alpha: 0.1),
       child: Row(
         children: [
           Icon(statusIcon, color: statusColor),
@@ -398,7 +392,7 @@ class _CheckinScreenState extends State<CheckinScreen>
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.9),
+                color: Colors.red.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -412,7 +406,7 @@ class _CheckinScreenState extends State<CheckinScreen>
         if (_state == CheckinState.memberScanned ||
             _state == CheckinState.completed)
           Container(
-            color: Colors.white.withOpacity(0.95),
+            color: Colors.white.withValues(alpha: 0.95),
             child: _buildParticipantInfo(),
           ),
       ],
@@ -438,7 +432,7 @@ class _CheckinScreenState extends State<CheckinScreen>
                         fit: BoxFit.cover,
                         width: 100,
                         height: 100,
-                        errorBuilder: (_, __, ___) => const Icon(
+                        errorBuilder: (_, _, _) => const Icon(
                           Icons.person,
                           size: 50,
                           color: Colors.grey,
@@ -605,53 +599,6 @@ class _CheckinScreenState extends State<CheckinScreen>
         ),
         Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
       ],
-    );
-  }
-
-  void _showStatistics() {
-    final provider = context.read<ParticipantProvider>();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('检录统计'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildStatRow('总参赛人数', provider.totalCount),
-            _buildStatRow('已检录', provider.checkedInCount),
-            _buildStatRow('未检录', provider.uncheckedCount),
-            const Divider(),
-            _buildStatRow(
-              '检录完成率',
-              provider.totalCount > 0
-                  ? '${(provider.checkedInCount / provider.totalCount * 100).toStringAsFixed(1)}%'
-                  : '0%',
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('关闭'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatRow(String label, dynamic value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label),
-          Text(
-            value.toString(),
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-        ],
-      ),
     );
   }
 }

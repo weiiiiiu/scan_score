@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:permission_handler/permission_handler.dart';
 
 /// 相机服务 (Android 专用优化版)
@@ -61,7 +62,7 @@ class CameraService {
 
       return true;
     } catch (e) {
-      print('相机初始化失败: $e');
+      debugPrint('相机初始化失败: $e');
       _isInitialized = false;
       return false;
     }
@@ -77,7 +78,7 @@ class CameraService {
     try {
       await _controller!.startImageStream(onImage);
     } catch (e) {
-      print('启动流失败: $e');
+      debugPrint('启动流失败: $e');
     }
   }
 
@@ -91,7 +92,7 @@ class CameraService {
     try {
       await _controller!.stopImageStream();
     } catch (e) {
-      print('停止流失败: $e');
+      debugPrint('停止流失败: $e');
     }
   }
 
@@ -113,7 +114,7 @@ class CameraService {
       final file = await _controller!.takePicture();
       return file;
     } catch (e) {
-      print('拍照失败: $e');
+      debugPrint('拍照失败: $e');
       return null;
     }
   }

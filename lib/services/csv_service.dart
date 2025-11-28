@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import '../models/participant.dart';
 import 'storage_service.dart';
 import 'file_service.dart';
@@ -122,7 +123,7 @@ class CsvService {
 
       return sourcePath;
     } catch (e) {
-      print('导入 CSV 失败: $e');
+      debugPrint('导入 CSV 失败: $e');
       rethrow;
     }
   }
@@ -166,7 +167,7 @@ class CsvService {
 
       return exportDir;
     } catch (e) {
-      print('导出 CSV 失败: $e');
+      debugPrint('导出 CSV 失败: $e');
       rethrow;
     }
   }

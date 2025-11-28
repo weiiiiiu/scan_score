@@ -499,7 +499,7 @@ class _ScoringScreenState extends State<ScoringScreen>
                 ),
                 ElevatedButton(
                   onPressed: _initializeCamera,
-                  child: const Text('继续评分'),
+                  child: const Text('重试相机'),
                 ),
               ],
             )

@@ -39,7 +39,6 @@ class AppTheme {
       secondary: secondaryColor,
       error: errorColor,
       surface: surfaceColor,
-      background: backgroundColor,
     );
 
     return ThemeData(
@@ -212,7 +211,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: colorScheme.background,
+      scaffoldBackgroundColor: colorScheme.surface,
 
       appBarTheme: AppBarTheme(
         elevation: 0,

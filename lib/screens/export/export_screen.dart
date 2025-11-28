@@ -122,9 +122,9 @@ class _ExportScreenState extends State<ExportScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Column(
         children: [
@@ -141,7 +141,7 @@ class _ExportScreenState extends State<ExportScreen> {
           const SizedBox(height: 4),
           Text(
             label,
-            style: TextStyle(fontSize: 14, color: color.withOpacity(0.8)),
+            style: TextStyle(fontSize: 14, color: color.withValues(alpha: 0.8)),
           ),
         ],
       ),
@@ -228,7 +228,7 @@ class _ExportScreenState extends State<ExportScreen> {
           borderRadius: BorderRadius.circular(4),
           child: LinearProgressIndicator(
             value: percentage / 100,
-            backgroundColor: color.withOpacity(0.2),
+            backgroundColor: color.withValues(alpha: 0.2),
             valueColor: AlwaysStoppedAnimation<Color>(color),
             minHeight: 8,
           ),
@@ -611,7 +611,7 @@ class _ExportScreenState extends State<ExportScreen> {
                           width: 60,
                           height: 60,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
+                          errorBuilder: (_, _, _) => Container(
                             width: 60,
                             height: 60,
                             color: Colors.grey.shade200,

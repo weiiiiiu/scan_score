@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show ChangeNotifier, debugPrint;
 import '../models/participant.dart';
 import '../services/csv_service.dart';
 import '../services/file_service.dart';
@@ -57,7 +57,7 @@ class ParticipantProvider extends ChangeNotifier {
     } catch (e) {
       _error = '加载数据失败: $e';
       _participants = [];
-      print(_error);
+      debugPrint(_error);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -88,7 +88,7 @@ class ParticipantProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       _error = '导入 CSV 失败: $e';
-      print(_error);
+      debugPrint(_error);
       _isLoading = false;
       notifyListeners();
       return false;
@@ -109,7 +109,7 @@ class ParticipantProvider extends ChangeNotifier {
         }
       }
     } catch (e) {
-      print('清空评分照片失败: $e');
+      debugPrint('清空评分照片失败: $e');
       // 不抛出异常，继续执行
     }
   }
@@ -120,7 +120,7 @@ class ParticipantProvider extends ChangeNotifier {
       return await _csvService.exportCsv(_participants);
     } catch (e) {
       _error = '导出数据失败: $e';
-      print(_error);
+      debugPrint(_error);
       notifyListeners();
       return null;
     }
@@ -195,7 +195,7 @@ class ParticipantProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       _error = '更新数据失败: $e';
-      print(_error);
+      debugPrint(_error);
       notifyListeners();
       rethrow;
     }
@@ -221,7 +221,7 @@ class ParticipantProvider extends ChangeNotifier {
       await updateParticipant(updated);
     } catch (e) {
       _error = '绑定作品码失败: $e';
-      print(_error);
+      debugPrint(_error);
       notifyListeners();
       rethrow;
     }
@@ -245,7 +245,7 @@ class ParticipantProvider extends ChangeNotifier {
         try {
           await _fileService.deleteFile(participant.evidenceImg!);
         } catch (e) {
-          print('删除旧照片失败: $e');
+          debugPrint('删除旧照片失败: $e');
           // 继续执行，不抛出异常
         }
       }
@@ -259,7 +259,7 @@ class ParticipantProvider extends ChangeNotifier {
       await updateParticipant(updated);
     } catch (e) {
       _error = '提交评分失败: $e';
-      print(_error);
+      debugPrint(_error);
       notifyListeners();
       rethrow;
     }

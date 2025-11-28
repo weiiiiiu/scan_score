@@ -143,7 +143,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
             children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _filterGroup,
+                  initialValue: _filterGroup,
                   decoration: const InputDecoration(
                     labelText: '组别',
                     border: OutlineInputBorder(),
@@ -163,7 +163,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _filterStatus,
+                  initialValue: _filterStatus,
                   decoration: const InputDecoration(
                     labelText: '状态',
                     border: OutlineInputBorder(),
@@ -271,9 +271,9 @@ class _ManagementScreenState extends State<ManagementScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       margin: const EdgeInsets.only(top: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withOpacity(0.5)),
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Text(
         label,
@@ -524,7 +524,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
                 );
                 if (ctx.mounted) {
                   Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  ScaffoldMessenger.of(ctx).showSnackBar(
                     const SnackBar(
                       content: Text('保存成功'),
                       backgroundColor: Colors.green,
@@ -533,7 +533,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
                 }
               } catch (e) {
                 if (ctx.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  ScaffoldMessenger.of(ctx).showSnackBar(
                     SnackBar(
                       content: Text('保存失败: $e'),
                       backgroundColor: Colors.red,
