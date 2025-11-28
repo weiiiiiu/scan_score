@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:archive/archive.dart';
 import 'package:csv/csv.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../providers/participant_provider.dart';
 import '../../services/storage_service.dart';
 import '../../services/file_service.dart';
@@ -394,17 +395,48 @@ class _ExportScreenState extends State<ExportScreen> {
       final zipEncoder = ZipEncoder();
       final zipData = zipEncoder.encode(archive);
 
-      // 4. 保存到 Download 目录
-      final downloadDir = Directory('/storage/emulated/0/Download');
-      if (!await downloadDir.exists()) {
-        await downloadDir.create(recursive: true);
+      // 关闭进度对话框
+      if (mounted) {
+        Navigator.of(context).pop();
       }
 
-      final zipPath = '${downloadDir.path}/pfxt.zip';
+      // 4. 让用户选择保存目录
+      final selectedDirectory = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: '选择导出文件夹',
+      );
+
+      if (selectedDirectory == null) {
+        // 用户取消了选择
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('已取消导出')));
+        }
+        return;
+      }
+
+      // 显示保存进度对话框
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => const AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 20),
+                Text('正在保存文件...'),
+              ],
+            ),
+          ),
+        );
+      }
+
+      final zipPath = '$selectedDirectory/pfxt.zip';
       final zipFile = File(zipPath);
       await zipFile.writeAsBytes(zipData);
 
-      // 关闭进度对话框
+      // 关闭保存进度对话框
       if (mounted) {
         Navigator.of(context).pop();
       }
@@ -427,13 +459,14 @@ class _ExportScreenState extends State<ExportScreen> {
                     color: Colors.grey.shade100,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Text(
-                    'Download/pfxt.zip',
-                    style: TextStyle(
-                      fontSize: 16,
+                  child: Text(
+                    zipPath,
+                    style: const TextStyle(
+                      fontSize: 14,
                       fontWeight: FontWeight.bold,
                       fontFamily: 'monospace',
                     ),
+                    textAlign: TextAlign.center,
                   ),
                 ),
                 const SizedBox(height: 16),
