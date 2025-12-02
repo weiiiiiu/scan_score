@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../screens/splash_screen.dart';
 import '../screens/dashboard/dashboard_screen.dart';
 import '../screens/checkin/checkin_screen.dart';
 import '../screens/scoring/scoring_screen.dart';
@@ -8,7 +9,8 @@ import '../screens/export/export_screen.dart';
 /// 应用路由配置
 class AppRoutes {
   // 路由名称常量
-  static const String dashboard = '/';
+  static const String splash = '/';
+  static const String dashboard = '/dashboard';
   static const String checkin = '/checkin';
   static const String scoring = '/scoring';
   static const String management = '/management';
@@ -17,6 +19,7 @@ class AppRoutes {
   /// 生成路由表
   static Map<String, WidgetBuilder> getRoutes() {
     return {
+      splash: (context) => const SplashScreen(),
       dashboard: (context) => const DashboardScreen(),
       checkin: (context) => const CheckinScreen(),
       scoring: (context) => const ScoringScreen(),

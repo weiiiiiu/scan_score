@@ -29,6 +29,7 @@ class _CheckinScreenState extends State<CheckinScreen>
   CheckinState _state = CheckinState.initial;
   String? _errorMessage;
   bool _isProcessing = false;
+  bool _isInitializing = false; // 防止重复初始化
 
   String? _scannedMemberCode;
   Participant? _currentParticipant;
@@ -50,18 +51,37 @@ class _CheckinScreenState extends State<CheckinScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _controller?.dispose();
+    _disposeCamera();
     _barcodeService.dispose();
     super.dispose();
   }
 
+  Future<void> _disposeCamera() async {
+    final controller = _controller;
+    _controller = null;
+    if (controller != null) {
+      if (controller.value.isStreamingImages) {
+        try {
+          await controller.stopImageStream();
+        } catch (_) {}
+      }
+      await controller.dispose();
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_controller == null || !_controller!.value.isInitialized) return;
+    // 相机未初始化时不处理
+    if (_controller == null) return;
+
     if (state == AppLifecycleState.inactive) {
-      _controller?.dispose();
+      // App 切到后台，释放相机
+      _disposeCamera();
     } else if (state == AppLifecycleState.resumed) {
-      _initCamera();
+      // App 回到前台，重新初始化
+      if (_controller == null && !_isInitializing) {
+        _initCamera();
+      }
     }
   }
 
@@ -73,18 +93,33 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   Future<void> _initCamera() async {
+    // 防止重复初始化
+    if (_isInitializing) return;
+    _isInitializing = true;
+
     try {
+      // 先释放旧的 controller
+      await _disposeCamera();
+      
+      // 等待相机资源完全释放
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      if (!mounted) return;
+
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
         if (mounted) setState(() => _errorMessage = '未检测到相机设备');
         return;
       }
+
+      if (!mounted) return;
+
       final camera = cameras.firstWhere(
         (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
 
-      _controller = CameraController(
+      final controller = CameraController(
         camera,
         ResolutionPreset.medium,
         enableAudio: false,
@@ -93,16 +128,31 @@ class _CheckinScreenState extends State<CheckinScreen>
             : ImageFormatGroup.bgra8888,
       );
 
-      await _controller!.initialize();
+      await controller.initialize();
+      
+      // 等待相机稳定
+      await Future.delayed(const Duration(milliseconds: 200));
 
-      if (mounted) {
-        setState(() {
-          _state = CheckinState.scanningMember;
-        });
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
+      _controller = controller;
+      setState(() {
+        _state = CheckinState.scanningMember;
+        _errorMessage = null;
+      });
+      
+      // 给一个小延迟再开始扫描，确保 UI 已渲染
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (mounted && _controller != null) {
         _startImageStream();
       }
     } catch (e) {
       if (mounted) setState(() => _errorMessage = '相机初始化失败: $e');
+    } finally {
+      _isInitializing = false;
     }
   }
 
@@ -398,7 +448,22 @@ class _CheckinScreenState extends State<CheckinScreen>
             ),
           )
         else
-          const Center(child: CircularProgressIndicator()),
+          Container(
+            color: Colors.black87,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(color: Colors.white),
+                  const SizedBox(height: 16),
+                  Text(
+                    _isInitializing ? '正在初始化相机...' : '等待相机就绪...',
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          ),
 
         if (!_isScanPaused)
           Center(

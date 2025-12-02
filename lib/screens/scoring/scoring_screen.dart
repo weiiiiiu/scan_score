@@ -42,6 +42,7 @@ class _ScoringScreenState extends State<ScoringScreen>
   String? _photoPath;
   String? _savedPhotoPath;
   String? _errorMessage;
+  bool _isInitializing = false; // 防止重复初始化
 
   // 扫描控制
   bool _isProcessing = false;
@@ -60,37 +61,63 @@ class _ScoringScreenState extends State<ScoringScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _controller?.dispose();
+    _disposeCamera();
     _barcodeService.dispose();
     _scoreController.dispose();
     super.dispose();
   }
 
+  Future<void> _disposeCamera() async {
+    final controller = _controller;
+    _controller = null;
+    if (controller != null) {
+      if (controller.value.isStreamingImages) {
+        try {
+          await controller.stopImageStream();
+        } catch (_) {}
+      }
+      await controller.dispose();
+    }
+  }
+
   // 生命周期监听：处理切后台
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final CameraController? cameraController = _controller;
-
-    // App 切到后台或不活跃
-    if (cameraController == null || !cameraController.value.isInitialized) {
-      return;
-    }
+    // 相机未初始化时不处理
+    if (_controller == null) return;
 
     if (state == AppLifecycleState.inactive) {
-      cameraController.dispose();
+      // App 切到后台，释放相机
+      _disposeCamera();
     } else if (state == AppLifecycleState.resumed) {
-      // App 回到前台，重新初始化相机
-      _initializeCamera();
+      // App 回到前台，重新初始化
+      if (_controller == null && !_isInitializing) {
+        _initializeCamera();
+      }
     }
   }
 
   Future<void> _initializeCamera() async {
+    // 防止重复初始化
+    if (_isInitializing) return;
+    _isInitializing = true;
+
     try {
+      // 先释放旧的 controller
+      await _disposeCamera();
+      
+      // 等待相机资源完全释放
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      if (!mounted) return;
+
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
         if (mounted) setState(() => _errorMessage = '未检测到相机');
         return;
       }
+
+      if (!mounted) return;
 
       // 优先后置
       final camera = cameras.firstWhere(
@@ -99,27 +126,41 @@ class _ScoringScreenState extends State<ScoringScreen>
       );
 
       // Android 优化
-      _controller = CameraController(
+      final controller = CameraController(
         camera,
         ResolutionPreset.high,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.nv21,
       );
 
-      await _controller!.initialize();
+      await controller.initialize();
+      
+      // 等待相机稳定
+      await Future.delayed(const Duration(milliseconds: 200));
 
-      if (mounted) {
-        // 如果当前是初始状态，初始化完直接进入扫描
-        if (_state == ScoringState.initial) {
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+
+      _controller = controller;
+
+      // 如果当前是初始状态，初始化完直接进入扫描
+      if (_state == ScoringState.initial) {
+        // 给一个小延迟再开始扫描，确保 UI 已渲染
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (mounted && _controller != null) {
           _startScanning();
-        } else {
-          setState(() {}); // 仅刷新UI
         }
+      } else {
+        setState(() {}); // 仅刷新UI
       }
     } catch (e) {
       if (mounted) {
         setState(() => _errorMessage = '相机初始化失败: $e');
       }
+    } finally {
+      _isInitializing = false;
     }
   }
 
@@ -482,30 +523,42 @@ class _ScoringScreenState extends State<ScoringScreen>
   }
 
   Widget _buildInitialView() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          if (_errorMessage != null)
-            Column(
-              children: [
-                Icon(Icons.error, size: 80, color: Colors.red[300]),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    _errorMessage!,
-                    style: const TextStyle(color: Colors.red),
+    return Container(
+      color: Colors.black87,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_errorMessage != null)
+              Column(
+                children: [
+                  Icon(Icons.error, size: 80, color: Colors.red[300]),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(color: Colors.red),
+                    ),
                   ),
-                ),
-                ElevatedButton(
-                  onPressed: _initializeCamera,
-                  child: const Text('继续评分'),
-                ),
-              ],
-            )
-          else
-            const CircularProgressIndicator(),
-        ],
+                  ElevatedButton(
+                    onPressed: _initializeCamera,
+                    child: const Text('继续评分'),
+                  ),
+                ],
+              )
+            else
+              Column(
+                children: [
+                  const CircularProgressIndicator(color: Colors.white),
+                  const SizedBox(height: 16),
+                  Text(
+                    _isInitializing ? '正在初始化相机...' : '等待相机就绪...',
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
+                ],
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -520,7 +573,22 @@ class _ScoringScreenState extends State<ScoringScreen>
               if (_controller != null && _controller!.value.isInitialized)
                 CameraPreview(_controller!)
               else
-                const Center(child: CircularProgressIndicator()),
+                Container(
+                  color: Colors.black87,
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const CircularProgressIndicator(color: Colors.white),
+                        const SizedBox(height: 16),
+                        Text(
+                          _isInitializing ? '正在初始化相机...' : '等待相机就绪...',
+                          style: const TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               Center(
                 child: Container(
                   width: 280,

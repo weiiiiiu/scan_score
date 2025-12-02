@@ -50,8 +50,8 @@ class MyApp extends StatelessWidget {
         // 参赛者数据 Provider
         ChangeNotifierProvider(
           create: (_) =>
-              ParticipantProvider(csvService, fileService, storageService)
-                ..loadData(), // 自动加载数据
+              ParticipantProvider(csvService, fileService, storageService),
+          // 数据加载移到 SplashScreen 中进行
         ),
       ],
       child: MaterialApp(
@@ -60,7 +60,7 @@ class MyApp extends StatelessWidget {
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,
         themeMode: ThemeMode.light,
-        initialRoute: AppRoutes.dashboard,
+        initialRoute: AppRoutes.splash,
         routes: AppRoutes.getRoutes(),
       ),
     );
