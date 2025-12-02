@@ -105,7 +105,7 @@ class _ScoringScreenState extends State<ScoringScreen>
     try {
       // 先释放旧的 controller
       await _disposeCamera();
-      
+
       // 等待相机资源完全释放
       await Future.delayed(const Duration(milliseconds: 300));
 
@@ -134,7 +134,7 @@ class _ScoringScreenState extends State<ScoringScreen>
       );
 
       await controller.initialize();
-      
+
       // 等待相机稳定
       await Future.delayed(const Duration(milliseconds: 200));
 
@@ -583,7 +583,10 @@ class _ScoringScreenState extends State<ScoringScreen>
                         const SizedBox(height: 16),
                         Text(
                           _isInitializing ? '正在初始化相机...' : '等待相机就绪...',
-                          style: const TextStyle(color: Colors.white70, fontSize: 14),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
                         ),
                       ],
                     ),

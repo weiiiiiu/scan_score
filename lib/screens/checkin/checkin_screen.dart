@@ -100,7 +100,7 @@ class _CheckinScreenState extends State<CheckinScreen>
     try {
       // 先释放旧的 controller
       await _disposeCamera();
-      
+
       // 等待相机资源完全释放
       await Future.delayed(const Duration(milliseconds: 300));
 
@@ -129,7 +129,7 @@ class _CheckinScreenState extends State<CheckinScreen>
       );
 
       await controller.initialize();
-      
+
       // 等待相机稳定
       await Future.delayed(const Duration(milliseconds: 200));
 
@@ -143,7 +143,7 @@ class _CheckinScreenState extends State<CheckinScreen>
         _state = CheckinState.scanningMember;
         _errorMessage = null;
       });
-      
+
       // 给一个小延迟再开始扫描，确保 UI 已渲染
       await Future.delayed(const Duration(milliseconds: 100));
       if (mounted && _controller != null) {
