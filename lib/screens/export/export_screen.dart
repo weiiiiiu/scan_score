@@ -398,8 +398,7 @@ class _ExportScreenState extends State<ExportScreen> {
       if (zipData == null) throw Exception("压缩数据为空");
 
       final tempDir = await getTemporaryDirectory();
-      final tempZipPath =
-          '${tempDir.path}/pfxt_${DateTime.now().millisecondsSinceEpoch}.zip';
+      final tempZipPath = '${tempDir.path}/pfxt.zip';
       final tempZipFile = File(tempZipPath);
       await tempZipFile.writeAsBytes(zipData);
 
@@ -447,8 +446,7 @@ class _ExportScreenState extends State<ExportScreen> {
     );
     if (directory == null) return;
 
-    final targetPath =
-        '$directory/pfxt_${DateTime.now().millisecondsSinceEpoch}.zip';
+    final targetPath = '$directory/pfxt.zip';
     await sourceFile.copy(targetPath);
 
     if (mounted) _showSuccessDialog(targetPath);
@@ -458,7 +456,7 @@ class _ExportScreenState extends State<ExportScreen> {
   Future<void> _saveFileModern(File sourceFile) async {
     final params = SaveFileDialogParams(
       sourceFilePath: sourceFile.path,
-      fileName: 'pfxt_${DateTime.now().millisecondsSinceEpoch}.zip',
+      fileName: 'pfxt.zip',
     );
 
     // 这会弹出一个系统底部的保存框，用户可以选择下载目录或其他位置

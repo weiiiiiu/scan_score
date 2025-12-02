@@ -102,7 +102,7 @@ class _CheckinScreenState extends State<CheckinScreen>
       await _disposeCamera();
 
       // 等待相机资源完全释放
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 150));
 
       if (!mounted) return;
 
@@ -130,9 +130,6 @@ class _CheckinScreenState extends State<CheckinScreen>
 
       await controller.initialize();
 
-      // 等待相机稳定
-      await Future.delayed(const Duration(milliseconds: 200));
-
       if (!mounted) {
         await controller.dispose();
         return;
@@ -144,8 +141,8 @@ class _CheckinScreenState extends State<CheckinScreen>
         _errorMessage = null;
       });
 
-      // 给一个小延迟再开始扫描，确保 UI 已渲染
-      await Future.delayed(const Duration(milliseconds: 100));
+      // 稍微延迟再开始扫描
+      await Future.delayed(const Duration(milliseconds: 70));
       if (mounted && _controller != null) {
         _startImageStream();
       }

@@ -107,7 +107,7 @@ class _ScoringScreenState extends State<ScoringScreen>
       await _disposeCamera();
 
       // 等待相机资源完全释放
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 150));
 
       if (!mounted) return;
 
@@ -135,9 +135,6 @@ class _ScoringScreenState extends State<ScoringScreen>
 
       await controller.initialize();
 
-      // 等待相机稳定
-      await Future.delayed(const Duration(milliseconds: 200));
-
       if (!mounted) {
         await controller.dispose();
         return;
@@ -147,8 +144,8 @@ class _ScoringScreenState extends State<ScoringScreen>
 
       // 如果当前是初始状态，初始化完直接进入扫描
       if (_state == ScoringState.initial) {
-        // 给一个小延迟再开始扫描，确保 UI 已渲染
-        await Future.delayed(const Duration(milliseconds: 100));
+        // 稍微延迟再开始扫描
+        await Future.delayed(const Duration(milliseconds: 70));
         if (mounted && _controller != null) {
           _startScanning();
         }
@@ -681,134 +678,217 @@ class _ScoringScreenState extends State<ScoringScreen>
     );
   }
 
-  // --- 修改点：使用 SingleChildScrollView + 固定高度 解决溢出和扁平化问题 ---
+  // --- 相机全屏 + 分数输入绝对定位 ---
   Widget _buildScoringView() {
-    // 使用屏幕宽度的 4/3 作为相机高度，保持标准比例，防止被压扁
-    final cameraHeight = MediaQuery.of(context).size.width * 1.33;
-
-    return SingleChildScrollView(
-      child: Column(
+    return GestureDetector(
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          // 顶部信息
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            color: Colors.blue.shade50,
-            child: Row(
-              children: [
-                const Icon(Icons.qr_code, color: Colors.blue),
-                const SizedBox(width: 8),
-                Text(
-                  '作品码: $_scannedWorkCode',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue,
+          // 相机预览 - 全屏
+          if (_controller != null && _controller!.value.isInitialized)
+            ClipRect(
+              child: OverflowBox(
+                alignment: Alignment.center,
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: _controller!.value.previewSize!.height,
+                    height: _controller!.value.previewSize!.width,
+                    child: CameraPreview(_controller!),
                   ),
                 ),
-              ],
+              ),
+            )
+          else
+            Container(
+              color: Colors.black87,
+              child: const Center(
+                child: Text("相机未就绪", style: TextStyle(color: Colors.white70)),
+              ),
+            ),
+
+          // 顶部信息 - 绝对定位
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              color: Colors.blue.withOpacity(0.9),
+              child: Row(
+                children: [
+                  const Icon(Icons.qr_code, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Text(
+                    '作品码: $_scannedWorkCode',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
 
-          // 相机预览 - 固定高度，移除 Expanded
-          SizedBox(
-            width: double.infinity,
-            height: cameraHeight,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (_controller != null && _controller!.value.isInitialized)
-                  // 使用 FittedBox 确保填充且不拉伸
-                  FittedBox(
-                    fit: BoxFit.cover,
-                    child: SizedBox(
-                      width: _controller!.value.previewSize!.height,
-                      height: _controller!.value.previewSize!.width,
-                      child: CameraPreview(_controller!),
-                    ),
-                  )
-                else
-                  const Center(child: Text("相机未就绪")),
-
-                // 拍照按钮
-                Positioned(
-                  bottom: 20,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: FloatingActionButton.large(
-                      onPressed: _takePhoto,
-                      backgroundColor: Colors.white,
-                      child: const Icon(
-                        Icons.camera,
-                        size: 50,
-                        color: Colors.blue,
+          // 底部分数输入区域 - 绝对定位
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 10,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    '请输入分数 (0-100)',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: 150,
+                    child: TextField(
+                      controller: _scoreController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
                       ),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 36,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      decoration: const InputDecoration(
+                        border: UnderlineInputBorder(),
+                      ),
+                      onChanged: _updateScoreFromInput,
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
 
-          // 分数输入
-          _buildScorePanel(),
-
-          // 底部填充，确保键盘弹出时能滚动到底部
-          const SizedBox(height: 20),
+          // 拍照按钮 - 中间偏下
+          Positioned(
+            bottom: 160,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: FloatingActionButton.large(
+                onPressed: _takePhoto,
+                backgroundColor: Colors.white,
+                child: const Icon(Icons.camera, size: 50, color: Colors.blue),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // --- 修改点：同样使用 SingleChildScrollView 解决溢出 ---
+  // --- 照片预览全屏 + 分数输入绝对定位 ---
   Widget _buildPhotoTakenView() {
-    final imageHeight = MediaQuery.of(context).size.width * 1.33;
-
-    return SingleChildScrollView(
-      child: Column(
+    return GestureDetector(
+      onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          // 照片预览 - 固定高度
-          SizedBox(
-            width: double.infinity,
-            height: imageHeight,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (_photoPath != null)
-                  Image.file(File(_photoPath!), fit: BoxFit.cover),
-                Positioned(
-                  bottom: 16,
-                  right: 16,
-                  child: FloatingActionButton.small(
-                    onPressed: _retakePhoto,
-                    backgroundColor: Colors.white,
-                    child: const Icon(Icons.refresh, color: Colors.black),
-                  ),
-                ),
-              ],
+          // 照片预览 - 全屏
+          if (_photoPath != null)
+            Image.file(File(_photoPath!), fit: BoxFit.cover)
+          else
+            Container(color: Colors.black),
+
+          // 重拍按钮 - 右上角
+          Positioned(
+            top: 16,
+            right: 16,
+            child: FloatingActionButton.small(
+              onPressed: _retakePhoto,
+              backgroundColor: Colors.white,
+              child: const Icon(Icons.refresh, color: Colors.black),
             ),
           ),
 
-          // 分数输入
-          _buildScorePanel(),
-
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _saveScore,
-                icon: const Icon(Icons.check),
-                label: const Text('确认保存'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+          // 底部分数输入 + 保存按钮 - 绝对定位
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 10,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    '请输入分数 (0-100)',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: 150,
+                    child: TextField(
+                      controller: _scoreController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 36,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      decoration: const InputDecoration(
+                        border: UnderlineInputBorder(),
+                      ),
+                      onChanged: _updateScoreFromInput,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _saveScore,
+                      icon: const Icon(Icons.check),
+                      label: const Text('确认保存'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-
-          const SizedBox(height: 20),
         ],
       ),
     );
@@ -829,33 +909,6 @@ class _ScoringScreenState extends State<ScoringScreen>
               fontSize: 40,
               fontWeight: FontWeight.bold,
               color: Colors.green,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildScorePanel() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      color: Colors.white,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text('请输入分数 (0-100)', style: TextStyle(color: Colors.grey)),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: 150,
-            child: TextField(
-              controller: _scoreController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold),
-              decoration: const InputDecoration(border: UnderlineInputBorder()),
-              onChanged: _updateScoreFromInput,
             ),
           ),
         ],
