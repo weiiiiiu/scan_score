@@ -1,13 +1,14 @@
 /// 参赛选手数据模型
 /// 对应 CSV 文件中的数据结构
-/// CSV 格式: 姓名,参赛编号,组别,头像名称,领队姓名
+/// CSV 格式: 参赛证号,姓名,组别,项目,队名,辅导员
 class Participant {
   final int id; // 内部ID（自动生成，基于行号）
   final String name; // 姓名
-  final String memberCode; // 参赛编号
+  final String memberCode; // 参赛证号
   final String? group; // 组别
-  final String? avatarPath; // 头像名称（路径）
-  final String? leaderName; // 领队姓名
+  final String? project; // 项目
+  final String? teamName; // 队名
+  final String? instructorName; // 辅导员
   String? workCode; // 作品码（检录时绑定）
   int checkStatus; // 0=未检录, 1=已检录
   double? score; // 分数
@@ -18,8 +19,9 @@ class Participant {
     required this.name,
     required this.memberCode,
     this.group,
-    this.avatarPath,
-    this.leaderName,
+    this.project,
+    this.teamName,
+    this.instructorName,
     this.workCode,
     this.checkStatus = 0,
     this.score,
@@ -27,44 +29,48 @@ class Participant {
   });
 
   /// 从 CSV 行数据创建 Participant
-  /// CSV 格式: 姓名,参赛编号,组别,头像名称,领队姓名[,作品码,检录状态,分数,评分照片]
-  /// 前5列为导入的基础数据，后4列为运行时数据（可选）
+  /// CSV 格式: 参赛证号,姓名,组别,项目,队名,辅导员[,作品码,检录状态,分数,评分照片]
+  /// 前6列为导入的基础数据，后4列为运行时数据（可选）
   factory Participant.fromCsvRow(List<dynamic> row, {required int rowIndex}) {
     return Participant(
       id: rowIndex, // 使用行号作为ID
-      name: row[0].toString().trim(),
-      memberCode: row[1].toString().trim(),
+      memberCode: row[0].toString().trim(),
+      name: row[1].toString().trim(),
       group: row.length > 2 && row[2].toString().trim().isNotEmpty
           ? row[2].toString().trim()
           : null,
-      avatarPath: row.length > 3 && row[3].toString().trim().isNotEmpty
+      project: row.length > 3 && row[3].toString().trim().isNotEmpty
           ? row[3].toString().trim()
           : null,
-      leaderName: row.length > 4 && row[4].toString().trim().isNotEmpty
+      teamName: row.length > 4 && row[4].toString().trim().isNotEmpty
           ? row[4].toString().trim()
           : null,
-      workCode: row.length > 5 && row[5].toString().trim().isNotEmpty
+      instructorName: row.length > 5 && row[5].toString().trim().isNotEmpty
           ? row[5].toString().trim()
           : null,
-      checkStatus: row.length > 6 ? (int.tryParse(row[6].toString()) ?? 0) : 0,
-      score: row.length > 7 && row[7].toString().trim().isNotEmpty
-          ? double.tryParse(row[7].toString())
+      workCode: row.length > 6 && row[6].toString().trim().isNotEmpty
+          ? row[6].toString().trim()
           : null,
-      evidenceImg: row.length > 8 && row[8].toString().trim().isNotEmpty
-          ? row[8].toString().trim()
+      checkStatus: row.length > 7 ? (int.tryParse(row[7].toString()) ?? 0) : 0,
+      score: row.length > 8 && row[8].toString().trim().isNotEmpty
+          ? double.tryParse(row[8].toString())
+          : null,
+      evidenceImg: row.length > 9 && row[9].toString().trim().isNotEmpty
+          ? row[9].toString().trim()
           : null,
     );
   }
 
   /// 转换为 CSV 行数据
-  /// 输出格式: 姓名,参赛编号,组别,头像名称,领队姓名,作品码,检录状态,分数,评分照片
+  /// 输出格式: 参赛证号,姓名,组别,项目,队名,辅导员,作品码,检录状态,分数,评分照片
   List<dynamic> toCsvRow() {
     return [
-      name,
       memberCode,
+      name,
       group ?? '',
-      avatarPath ?? '',
-      leaderName ?? '',
+      project ?? '',
+      teamName ?? '',
+      instructorName ?? '',
       workCode ?? '',
       checkStatus,
       score?.toString() ?? '',
@@ -79,8 +85,9 @@ class Participant {
       name: json['name'] as String,
       memberCode: json['member_code'] as String,
       group: json['group'] as String?,
-      avatarPath: json['avatar_path'] as String?,
-      leaderName: json['leader_name'] as String?,
+      project: json['project'] as String?,
+      teamName: json['team_name'] as String?,
+      instructorName: json['instructor_name'] as String?,
       workCode: json['work_code'] as String?,
       checkStatus: json['check_status'] as int? ?? 0,
       score: json['score'] as double?,
@@ -95,8 +102,9 @@ class Participant {
       'name': name,
       'member_code': memberCode,
       'group': group,
-      'avatar_path': avatarPath,
-      'leader_name': leaderName,
+      'project': project,
+      'team_name': teamName,
+      'instructor_name': instructorName,
       'work_code': workCode,
       'check_status': checkStatus,
       'score': score,
@@ -113,8 +121,9 @@ class Participant {
     String? name,
     String? memberCode,
     Object? group = _sentinel,
-    Object? avatarPath = _sentinel,
-    Object? leaderName = _sentinel,
+    Object? project = _sentinel,
+    Object? teamName = _sentinel,
+    Object? instructorName = _sentinel,
     Object? workCode = _sentinel,
     int? checkStatus,
     Object? score = _sentinel,
@@ -125,12 +134,11 @@ class Participant {
       name: name ?? this.name,
       memberCode: memberCode ?? this.memberCode,
       group: group == _sentinel ? this.group : group as String?,
-      avatarPath: avatarPath == _sentinel
-          ? this.avatarPath
-          : avatarPath as String?,
-      leaderName: leaderName == _sentinel
-          ? this.leaderName
-          : leaderName as String?,
+      project: project == _sentinel ? this.project : project as String?,
+      teamName: teamName == _sentinel ? this.teamName : teamName as String?,
+      instructorName: instructorName == _sentinel
+          ? this.instructorName
+          : instructorName as String?,
       workCode: workCode == _sentinel ? this.workCode : workCode as String?,
       checkStatus: checkStatus ?? this.checkStatus,
       score: score == _sentinel ? this.score : score as double?,
@@ -143,8 +151,9 @@ class Participant {
   @override
   String toString() {
     return 'Participant(id: $id, name: $name, memberCode: $memberCode, '
-        'group: $group, leaderName: $leaderName, '
-        'workCode: $workCode, checkStatus: $checkStatus, score: $score)';
+        'group: $group, project: $project, teamName: $teamName, '
+        'instructorName: $instructorName, workCode: $workCode, '
+        'checkStatus: $checkStatus, score: $score)';
   }
 
   @override

@@ -76,9 +76,9 @@ class CsvService {
   /// 在 Isolate 中生成 CSV 字符串
   static String _generateCsvInIsolate(List<Participant> participants) {
     // 构建 CSV 数据（包含表头）
-    // 表头: 姓名,参赛编号,组别,头像名称,领队姓名,作品码,检录状态,分数,评分照片
+    // 表头: 参赛证号,姓名,组别,项目,队名,辅导员,作品码,检录状态,分数,评分照片
     final rows = <List<dynamic>>[
-      ['姓名', '参赛编号', '组别', '头像名称', '领队姓名', '作品码', '检录状态', '分数', '评分照片'],
+      ['参赛证号', '姓名', '组别', '项目', '队名', '辅导员', '作品码', '检录状态', '分数', '评分照片'],
       ...participants.map((p) => p.toCsvRow()),
     ];
 

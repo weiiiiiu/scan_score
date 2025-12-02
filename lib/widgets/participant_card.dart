@@ -101,11 +101,15 @@ class ParticipantCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              _buildInfoRow(Icons.badge, '参赛编号', participant.memberCode),
+              _buildInfoRow(Icons.badge, '参赛证号', participant.memberCode),
               if (participant.group != null)
                 _buildInfoRow(Icons.group, '组别', participant.group!),
-              if (participant.leaderName != null)
-                _buildInfoRow(Icons.person, '领队', participant.leaderName!),
+              if (participant.project != null)
+                _buildInfoRow(Icons.emoji_events, '项目', participant.project!),
+              if (participant.teamName != null)
+                _buildInfoRow(Icons.groups, '队名', participant.teamName!),
+              if (participant.instructorName != null)
+                _buildInfoRow(Icons.person, '辅导员', participant.instructorName!),
               if (showDetails) ...[
                 if (participant.workCode != null)
                   _buildInfoRow(Icons.qr_code, '作品码', participant.workCode!),
@@ -133,20 +137,7 @@ class ParticipantCard extends StatelessWidget {
         color: Colors.grey[200],
         borderRadius: BorderRadius.circular(size / 2),
       ),
-      child: participant.avatarPath != null
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(size / 2),
-              child: Image.asset(
-                'assets/images/${participant.avatarPath}',
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Icon(
-                  Icons.person,
-                  size: size * 0.6,
-                  color: Colors.grey[400],
-                ),
-              ),
-            )
-          : Icon(Icons.person, size: size * 0.6, color: Colors.grey[400]),
+      child: Icon(Icons.person, size: size * 0.6, color: Colors.grey[400]),
     );
   }
 

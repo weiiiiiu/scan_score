@@ -456,21 +456,7 @@ class _CheckinScreenState extends State<CheckinScreen>
             CircleAvatar(
               radius: 50,
               backgroundColor: Colors.grey[200],
-              child: p.avatarPath != null
-                  ? ClipOval(
-                      child: Image.asset(
-                        'assets/images/${p.avatarPath}',
-                        fit: BoxFit.cover,
-                        width: 100,
-                        height: 100,
-                        errorBuilder: (_, _, _) => const Icon(
-                          Icons.person,
-                          size: 50,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    )
-                  : const Icon(Icons.person, size: 50, color: Colors.grey),
+              child: const Icon(Icons.person, size: 50, color: Colors.grey),
             ),
             const SizedBox(height: 16),
             Text(

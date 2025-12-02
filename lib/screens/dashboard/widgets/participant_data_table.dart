@@ -81,11 +81,11 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
             sortAscending: _sortAscending,
             columns: [
               DataColumn(
-                label: const Text('姓名'),
+                label: const Text('参赛编号'),
                 onSort: (index, ascending) => _onSort(index, ascending),
               ),
               DataColumn(
-                label: const Text('参赛编号'),
+                label: const Text('姓名'),
                 onSort: (index, ascending) => _onSort(index, ascending),
               ),
               DataColumn(
@@ -93,7 +93,7 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
                 onSort: (index, ascending) => _onSort(index, ascending),
               ),
               DataColumn(
-                label: const Text('领队'),
+                label: const Text('辅导员'),
                 onSort: (index, ascending) => _onSort(index, ascending),
               ),
               DataColumn(
@@ -125,17 +125,17 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
     sorted.sort((a, b) {
       int result;
       switch (_sortColumnIndex) {
-        case 0: // 姓名
-          result = a.name.compareTo(b.name);
-          break;
-        case 1: // 参赛编号
+        case 0: // 参赛编号
           result = a.memberCode.compareTo(b.memberCode);
+          break;
+        case 1: // 姓名
+          result = a.name.compareTo(b.name);
           break;
         case 2: // 组别
           result = (a.group ?? '').compareTo(b.group ?? '');
           break;
-        case 3: // 领队
-          result = (a.leaderName ?? '').compareTo(b.leaderName ?? '');
+        case 3: // 辅导员
+          result = (a.instructorName ?? '').compareTo(b.instructorName ?? '');
           break;
         case 4: // 检录状态
           result = a.checkStatus.compareTo(b.checkStatus);
@@ -172,10 +172,10 @@ class _ParticipantDataSource extends DataTableSource {
       index: index,
       onSelectChanged: onRowTap != null ? (_) => onRowTap!(participant) : null,
       cells: [
-        DataCell(Text(participant.name)),
         DataCell(Text(participant.memberCode)),
+        DataCell(Text(participant.name)),
         DataCell(Text(participant.group ?? '-')),
-        DataCell(Text(participant.leaderName ?? '-')),
+        DataCell(Text(participant.instructorName ?? '-')),
         DataCell(_buildStatusChip(participant.checkStatus)),
       ],
     );
