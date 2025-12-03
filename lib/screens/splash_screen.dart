@@ -20,25 +20,17 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _initializeApp() async {
-    // 记录开始时间
-    final startTime = DateTime.now();
-
     // 延迟一帧确保 UI 已经渲染
     await Future.delayed(const Duration(milliseconds: 100));
 
     if (!mounted) return;
 
-    // 加载数据
+    // 同时执行：加载数据 和 最少等待 0.5 秒
     final provider = context.read<ParticipantProvider>();
-    await provider.loadData();
-
-    if (!mounted) return;
-
-    // 确保启动页至少显示 1 秒
-    final elapsed = DateTime.now().difference(startTime).inMilliseconds;
-    if (elapsed < 1000) {
-      await Future.delayed(Duration(milliseconds: 1000 - elapsed));
-    }
+    await Future.wait([
+      provider.loadData(),
+      Future.delayed(const Duration(milliseconds: 500)),
+    ]);
 
     if (!mounted) return;
 

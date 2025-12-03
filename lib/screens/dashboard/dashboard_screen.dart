@@ -32,16 +32,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       appBar: AppBar(
         title: const Text('检录评分系统'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          // 刷新按钮
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: '刷新数据',
-            onPressed: () {
-              context.read<ParticipantProvider>().refresh();
-            },
-          ),
-        ],
       ),
       body: LoadingOverlay(
         isLoading: _isImporting,

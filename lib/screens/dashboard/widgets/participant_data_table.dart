@@ -20,6 +20,8 @@ class ParticipantDataTable extends StatefulWidget {
 
 class _ParticipantDataTableState extends State<ParticipantDataTable> {
   bool _sortAscending = true;
+  // 筛选状态：null=全部, 1=已检录, 0=未检录
+  int? _filterCheckStatus;
 
   // 预定义颜色，避免每次 build 重新创建
   static final _blueLight = Colors.blue.shade50;
@@ -44,6 +46,13 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
         List<Participant> data = widget.searchQuery?.isNotEmpty == true
             ? provider.search(widget.searchQuery!)
             : provider.participants;
+
+        // 根据检录状态筛选
+        if (_filterCheckStatus != null) {
+          data = data
+              .where((p) => p.checkStatus == _filterCheckStatus)
+              .toList();
+        }
 
         // 按证号排序
         data = _sortData(data);
@@ -114,36 +123,36 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
                 ],
               ),
               const SizedBox(height: 6),
-              // 第二行：统计信息
+              // 第二行：统计信息（可点击筛选）
               Row(
                 children: [
-                  _StatBadge(
+                  _FilterBadge(
                     label: '总',
                     value: provider.totalCount,
                     color: Colors.blue,
+                    isSelected: _filterCheckStatus == null,
+                    onTap: () => setState(() => _filterCheckStatus = null),
                   ),
                   const SizedBox(width: 8),
-                  _StatBadge(
+                  _FilterBadge(
                     label: '已检录',
                     value: provider.checkedInCount,
                     color: Colors.green,
+                    isSelected: _filterCheckStatus == 1,
+                    onTap: () => setState(() {
+                      _filterCheckStatus = _filterCheckStatus == 1 ? null : 1;
+                    }),
                   ),
                   const SizedBox(width: 8),
-                  _StatBadge(
+                  _FilterBadge(
                     label: '未检录',
                     value: provider.uncheckedCount,
                     color: Colors.orange,
+                    isSelected: _filterCheckStatus == 0,
+                    onTap: () => setState(() {
+                      _filterCheckStatus = _filterCheckStatus == 0 ? null : 0;
+                    }),
                   ),
-                  const SizedBox(width: 8),
-                  _StatBadge(
-                    label: '已评分',
-                    value: provider.scoredCount,
-                    color: Colors.purple,
-                  ),
-                  if (count != provider.totalCount) ...[
-                    const SizedBox(width: 8),
-                    _StatBadge(label: '筛选', value: count, color: Colors.grey),
-                  ],
                 ],
               ),
             ],
@@ -163,32 +172,42 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
   }
 }
 
-/// 统计标签组件
-class _StatBadge extends StatelessWidget {
+/// 可点击的筛选标签组件
+class _FilterBadge extends StatelessWidget {
   final String label;
   final int value;
   final Color color;
+  final bool isSelected;
+  final VoidCallback onTap;
 
-  const _StatBadge({
+  const _FilterBadge({
     required this.label,
     required this.value,
     required this.color,
+    required this.isSelected,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        '$label $value',
-        style: TextStyle(
-          fontSize: 11,
-          color: color,
-          fontWeight: FontWeight.w600,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? color : color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: isSelected
+              ? null
+              : Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Text(
+          '$label $value',
+          style: TextStyle(
+            fontSize: 11,
+            color: isSelected ? Colors.white : color,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );
