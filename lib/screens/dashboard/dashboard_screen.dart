@@ -198,9 +198,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   },
                 )
               : null,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           filled: true,
           fillColor: Colors.white,
           contentPadding: const EdgeInsets.symmetric(
