@@ -122,7 +122,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
           // 搜索框
           TextField(
             decoration: InputDecoration(
-              hintText: '搜索姓名、参赛编号',
+              hintText: '搜索姓名/证号/项目/队名/辅导员/组别',
               prefixIcon: const Icon(Icons.search),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),

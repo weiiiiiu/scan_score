@@ -126,7 +126,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
-          hintText: '搜索姓名、参赛编号...',
+          hintText: '搜索',
           prefixIcon: const Icon(Icons.search),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(

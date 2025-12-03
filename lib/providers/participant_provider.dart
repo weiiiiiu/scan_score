@@ -165,14 +165,18 @@ class ParticipantProvider extends ChangeNotifier {
     return _participants.where((p) => p.score == null).toList();
   }
 
-  /// 根据姓名或选手码搜索
+  /// 根据姓名、证号、项目、队名、辅导员、组别搜索
   List<Participant> search(String query) {
     if (query.isEmpty) return _participants;
 
     final lowerQuery = query.toLowerCase();
     return _participants.where((p) {
       return p.name.toLowerCase().contains(lowerQuery) ||
-          p.memberCode.toLowerCase().contains(lowerQuery);
+          p.memberCode.toLowerCase().contains(lowerQuery) ||
+          (p.project?.toLowerCase().contains(lowerQuery) ?? false) ||
+          (p.teamName?.toLowerCase().contains(lowerQuery) ?? false) ||
+          (p.instructorName?.toLowerCase().contains(lowerQuery) ?? false) ||
+          (p.group?.toLowerCase().contains(lowerQuery) ?? false);
     }).toList();
   }
 

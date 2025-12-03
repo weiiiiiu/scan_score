@@ -527,7 +527,7 @@ class _CheckinScreenState extends State<CheckinScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              '参赛编号: ${p.memberCode}',
+              '参赛证号: ${p.memberCode}',
               style: TextStyle(fontSize: 16, color: Colors.grey[600]),
             ),
             if (p.group != null)
