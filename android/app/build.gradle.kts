@@ -40,6 +40,16 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
+
+    // 按 CPU 架构拆分 APK，大幅减小单个 APK 体积
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86_64")
+            isUniversalApk = false // 不生成通用 APK
+        }
+    }
 }
 
 flutter {
