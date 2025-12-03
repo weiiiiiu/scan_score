@@ -711,7 +711,7 @@ class _ScoringScreenState extends State<ScoringScreen>
             right: 0,
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-              color: Colors.blue.withOpacity(0.9),
+              color: Colors.blue.withValues(alpha: 0.9),
               child: Row(
                 children: [
                   const Icon(Icons.qr_code, color: Colors.white),
@@ -742,7 +742,7 @@ class _ScoringScreenState extends State<ScoringScreen>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
+                    color: Colors.black.withValues(alpha: 0.2),
                     blurRadius: 10,
                     offset: const Offset(0, -2),
                   ),
@@ -835,7 +835,7 @@ class _ScoringScreenState extends State<ScoringScreen>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
+                    color: Colors.black.withValues(alpha: 0.2),
                     blurRadius: 10,
                     offset: const Offset(0, -2),
                   ),

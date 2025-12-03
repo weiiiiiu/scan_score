@@ -112,7 +112,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         settings: const LiquidGlassSettings(
           thickness: 12,
           blur: 25,
-          glassColor: Color(0x30FFFFFF),
+          glassColor: Color(0x18FFFFFF),
           lightIntensity: 1.1,
           ambientStrength: 0.6,
           saturation: 1.0,

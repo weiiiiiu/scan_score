@@ -237,7 +237,7 @@ class _ExportScreenState extends State<ExportScreen> {
                 width: 60,
                 height: 60,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) =>
+                errorBuilder: (context, error, stackTrace) =>
                     Container(width: 60, height: 60, color: Colors.grey[200]),
               ),
             ),
@@ -303,7 +303,7 @@ class _ExportScreenState extends State<ExportScreen> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 4,
             offset: const Offset(0, -2),
           ),

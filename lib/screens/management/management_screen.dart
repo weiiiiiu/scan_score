@@ -498,6 +498,9 @@ class _ManagementScreenState extends State<ManagementScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
+              // 在任何 await 之前获取 provider
+              final provider = context.read<ParticipantProvider>();
+
               // 验证分数
               double? score;
               if (scoreController.text.isNotEmpty) {
@@ -556,18 +559,15 @@ class _ManagementScreenState extends State<ManagementScreen> {
               );
 
               try {
-                await context.read<ParticipantProvider>().updateParticipant(
-                  updated,
+                await provider.updateParticipant(updated);
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(
+                    content: Text('保存成功'),
+                    backgroundColor: Colors.green,
+                  ),
                 );
-                if (ctx.mounted) {
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    const SnackBar(
-                      content: Text('保存成功'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
               } catch (e) {
                 if (ctx.mounted) {
                   ScaffoldMessenger.of(ctx).showSnackBar(
