@@ -1,10 +1,10 @@
 import 'dart:io';
 import 'package:path/path.dart' as path;
 
-/// 文件管理服务
-/// 负责文件操作、目录管理
+// 文件管理服务
+
 class FileService {
-  /// 创建目录
+  // 创建目录
   Future<void> createDirectory(String dirPath) async {
     final directory = Directory(dirPath);
     if (!await directory.exists()) {
@@ -12,7 +12,7 @@ class FileService {
     }
   }
 
-  /// 复制文件
+  // 复制文件
   Future<void> copyFile(String sourcePath, String destinationPath) async {
     final sourceFile = File(sourcePath);
     if (!await sourceFile.exists()) {
@@ -26,7 +26,7 @@ class FileService {
     await sourceFile.copy(destinationPath);
   }
 
-  /// 删除文件
+  // 删除文件
   Future<void> deleteFile(String filePath) async {
     final file = File(filePath);
     if (await file.exists()) {
@@ -34,7 +34,7 @@ class FileService {
     }
   }
 
-  /// 删除目录
+  // 删除目录
   Future<void> deleteDirectory(String dirPath) async {
     final directory = Directory(dirPath);
     if (await directory.exists()) {
@@ -42,7 +42,7 @@ class FileService {
     }
   }
 
-  /// 重命名/移动文件
+  // 重命名/移动文件
   Future<String> renameFile(String oldPath, String newPath) async {
     final file = File(oldPath);
     if (!await file.exists()) {
@@ -57,17 +57,18 @@ class FileService {
     return renamedFile.path;
   }
 
-  /// 获取目录下的所有文件
-  Future<List<String>> listFiles(String dirPath,
-      {String? extension}) async {
+  // 获取目录下的所有文件
+  Future<List<String>> listFiles(String dirPath, {String? extension}) async {
     final directory = Directory(dirPath);
     if (!await directory.exists()) {
       return [];
     }
 
     final files = <String>[];
-    await for (final entity
-        in directory.list(recursive: false, followLinks: false)) {
+    await for (final entity in directory.list(
+      recursive: false,
+      followLinks: false,
+    )) {
       if (entity is File) {
         if (extension == null ||
             path.extension(entity.path).toLowerCase() == extension) {
@@ -79,10 +80,12 @@ class FileService {
     return files;
   }
 
-  /// 根据作品码查找照片文件
-  /// 照片命名格式: workCode_score.jpg
+  // 根据作品码查找照片文件
+  // 照片命名格式: workCode_score.jpg
   Future<String?> findPhotoByWorkCode(
-      String evidenceDir, String workCode) async {
+    String evidenceDir,
+    String workCode,
+  ) async {
     final files = await listFiles(evidenceDir, extension: '.jpg');
 
     for (final filePath in files) {
@@ -96,17 +99,17 @@ class FileService {
     return null;
   }
 
-  /// 检查文件是否存在
+  // 检查文件是否存在
   Future<bool> fileExists(String filePath) async {
     return await File(filePath).exists();
   }
 
-  /// 检查目录是否存在
+  // 检查目录是否存在
   Future<bool> directoryExists(String dirPath) async {
     return await Directory(dirPath).exists();
   }
 
-  /// 获取文件大小（字节）
+  // 获取文件大小（字节）
   Future<int> getFileSize(String filePath) async {
     final file = File(filePath);
     if (!await file.exists()) {
@@ -115,7 +118,7 @@ class FileService {
     return await file.length();
   }
 
-  /// 获取目录大小（所有文件总和）
+  // 获取目录大小（所有文件总和）
   Future<int> getDirectorySize(String dirPath) async {
     final directory = Directory(dirPath);
     if (!await directory.exists()) {
@@ -132,7 +135,7 @@ class FileService {
     return totalSize;
   }
 
-  /// 复制整个目录
+  // 复制整个目录
   Future<void> copyDirectory(String sourcePath, String destinationPath) async {
     final sourceDir = Directory(sourcePath);
     if (!await sourceDir.exists()) {

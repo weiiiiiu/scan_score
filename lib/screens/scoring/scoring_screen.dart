@@ -313,8 +313,6 @@ class _ScoringScreenState extends State<ScoringScreen>
     });
   }
 
-  // --- 业务逻辑 ---
-
   void _updateScoreFromInput(String value) {
     final parsed = double.tryParse(value);
     if (parsed != null) {
@@ -475,15 +473,13 @@ class _ScoringScreenState extends State<ScoringScreen>
     );
   }
 
-  // --- UI 构建 ---
-
   @override
   Widget build(BuildContext context) {
     // 1. 添加 GestureDetector 点击空白收起键盘
     return GestureDetector(
       onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
       child: Scaffold(
-        resizeToAvoidBottomInset: true, // 保持为 true，通过 ScrollView 解决溢出
+        resizeToAvoidBottomInset: true,
         appBar: AppBar(
           title: const Text('评分'),
           centerTitle: true,

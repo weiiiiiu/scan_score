@@ -58,8 +58,6 @@ class MyApp extends StatelessWidget {
         title: '检录评分系统',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
-        darkTheme: AppTheme.darkTheme,
-        themeMode: ThemeMode.light,
         initialRoute: AppRoutes.splash,
         routes: AppRoutes.getRoutes(),
       ),

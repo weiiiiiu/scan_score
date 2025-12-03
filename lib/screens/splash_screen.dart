@@ -4,7 +4,6 @@ import '../providers/participant_provider.dart';
 import '../config/routes.dart';
 
 /// 启动页面
-/// 在应用初始化时显示，避免白屏
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 

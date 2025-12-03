@@ -157,10 +157,8 @@ class _CheckinScreenState extends State<CheckinScreen>
     if (_controller == null) return;
 
     _controller!.startImageStream((CameraImage image) async {
-      // 1. 基础状态检查
       if (_isScanPaused || _isProcessing) return;
 
-      // 2. [冷却机制]：检查是否处于“冷却期”
       // 如果当前时间还在忽略时间内，直接丢弃这一帧，不进行识别
       if (_ignoreScanUntil != null &&
           DateTime.now().isBefore(_ignoreScanUntil!)) {
@@ -203,7 +201,6 @@ class _CheckinScreenState extends State<CheckinScreen>
   void _routeScannedCode(String code) {
     final now = DateTime.now();
 
-    // 3. 全局防抖逻辑
     // 如果码和上次一样，且时间间隔小于 1.5秒，直接忽略
     if (_lastScannedCode == code &&
         _lastScanTime != null &&
@@ -267,7 +264,6 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   void _handleWorkCode(String code) {
-    // 【修改点】：已移除 "code == _scannedMemberCode" 的拦截判断
     // 允许作品码与身份码一致。
 
     final provider = context.read<ParticipantProvider>();
@@ -309,7 +305,7 @@ class _CheckinScreenState extends State<CheckinScreen>
         setState(() {
           _errorMessage = '绑定失败: $e';
           _state = CheckinState.scanningWork;
-          // 绑定失败重试时，也给一点冷却时间
+
           _ignoreScanUntil = DateTime.now().add(
             const Duration(milliseconds: 1000),
           );
@@ -331,7 +327,7 @@ class _CheckinScreenState extends State<CheckinScreen>
       _ignoreScanUntil = DateTime.now().add(const Duration(milliseconds: 800));
 
       // 2. 重置防抖计时器为“现在”
-      // 这里的逻辑很关键：我们把上次扫描的码设为当前身份码。
+      // 把上次扫描的码设为当前身份码。
       // 如果 0.8秒后摄像头还对着同一个码，防抖逻辑(diff < 1.5s)会阻止它被识别。
       // 只有移开再回来，或者等待 1.5秒后，才能再次识别同一个码（作为作品码）。
       _lastScannedCode = _scannedMemberCode;
@@ -350,7 +346,6 @@ class _CheckinScreenState extends State<CheckinScreen>
 
       _lastScannedCode = null;
 
-      // 同样给予一点冷却时间
       _ignoreScanUntil = DateTime.now().add(const Duration(milliseconds: 800));
     });
   }

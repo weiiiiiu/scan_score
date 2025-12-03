@@ -8,10 +8,8 @@ import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
-// 新增包
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter_file_dialog/flutter_file_dialog.dart';
-
 import '../../providers/participant_provider.dart';
 import '../../services/storage_service.dart';
 import '../../services/file_service.dart';
@@ -346,9 +344,7 @@ class _ExportScreenState extends State<ExportScreen> {
     );
   }
 
-  // ==========================================
-  // 核心导出逻辑：兼容 Android 10 ~ 16
-  // ==========================================
+  // 核心导出逻辑
   Future<void> _exportAll(ParticipantProvider provider) async {
     if (_isExporting) return;
     setState(() => _isExporting = true);
@@ -368,7 +364,7 @@ class _ExportScreenState extends State<ExportScreen> {
     );
 
     try {
-      // 1. 生成 ZIP 到临时目录 (兼容所有版本，不需权限)
+      // 1. 生成 ZIP 到临时目录
       final archive = Archive();
 
       // 添加 CSV (带 BOM 解决乱码)
@@ -395,8 +391,6 @@ class _ExportScreenState extends State<ExportScreen> {
       }
 
       final zipData = ZipEncoder().encode(archive);
-      if (zipData == null) throw Exception("压缩数据为空");
-
       final tempDir = await getTemporaryDirectory();
       final tempZipPath = '${tempDir.path}/pfxt.zip';
       final tempZipFile = File(tempZipPath);
@@ -418,8 +412,7 @@ class _ExportScreenState extends State<ExportScreen> {
           await _saveFileModern(tempZipFile);
         }
       } else {
-        // iOS 或其他平台逻辑 (暂按 Modern 处理)
-        await _saveFileModern(tempZipFile);
+        throw Exception("仅支持安卓平台导出");
       }
     } catch (e) {
       if (mounted && Navigator.canPop(context)) Navigator.of(context).pop();
@@ -433,7 +426,7 @@ class _ExportScreenState extends State<ExportScreen> {
     }
   }
 
-  /// 方案 A：Android 10 及以下 (直接文件操作)
+  /// Android 10 及以下：通过 FilePicker 选择文件夹后直接写入
   Future<void> _saveFileLegacy(File sourceFile) async {
     // 申请存储权限
     if (!await Permission.storage.request().isGranted) {
@@ -452,14 +445,14 @@ class _ExportScreenState extends State<ExportScreen> {
     if (mounted) _showSuccessDialog(targetPath);
   }
 
-  /// 方案 B：Android 11+ (调用系统保存界面)
+  /// Android 11+：调用系统 SAF 保存对话框
   Future<void> _saveFileModern(File sourceFile) async {
     final params = SaveFileDialogParams(
       sourceFilePath: sourceFile.path,
       fileName: 'pfxt.zip',
     );
 
-    // 这会弹出一个系统底部的保存框，用户可以选择下载目录或其他位置
+    // 弹出一个系统底部的保存框，用户可以选择下载目录或其他位置
     final filePath = await FlutterFileDialog.saveFile(params: params);
 
     if (filePath != null && mounted) {

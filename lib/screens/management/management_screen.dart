@@ -7,7 +7,6 @@ import '../../services/storage_service.dart';
 import '../../services/file_service.dart';
 
 /// 管理界面
-/// 提供数据编辑、选手信息修改功能（需要超级管理员权限）
 class ManagementScreen extends StatefulWidget {
   const ManagementScreen({super.key});
 

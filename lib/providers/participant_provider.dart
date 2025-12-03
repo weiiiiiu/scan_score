@@ -5,7 +5,6 @@ import '../services/csv_service.dart';
 import '../services/file_service.dart';
 import '../services/storage_service.dart';
 
-/// 参赛者数据状态管理
 /// 负责管理所有参赛者数据的增删改查和统计
 class ParticipantProvider extends ChangeNotifier {
   final CsvService _csvService;
@@ -22,7 +21,7 @@ class ParticipantProvider extends ChangeNotifier {
     this._storageService,
   );
 
-  // ===== Getters =====
+  // Getters
 
   List<Participant> get participants => _participants;
   bool get isLoading => _isLoading;

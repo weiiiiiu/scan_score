@@ -30,7 +30,7 @@ class Participant {
 
   /// 从 CSV 行数据创建 Participant
   /// CSV 格式: 参赛证号,姓名,组别,项目,队名,辅导员[,作品码,检录状态,分数,评分照片]
-  /// 前6列为导入的基础数据，后4列为运行时数据（可选）
+  /// 前6列为导入的基础数据，后4列为运行时数据
   factory Participant.fromCsvRow(List<dynamic> row, {required int rowIndex}) {
     return Participant(
       id: rowIndex, // 使用行号作为ID

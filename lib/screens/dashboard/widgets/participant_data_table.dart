@@ -9,7 +9,6 @@ class ParticipantDataTable extends StatefulWidget {
   /// 搜索过滤文本
   final String? searchQuery;
 
-  /// 点击行时的回调
   final void Function(Participant)? onRowTap;
 
   const ParticipantDataTable({super.key, this.searchQuery, this.onRowTap});

@@ -3,27 +3,18 @@ import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:permission_handler/permission_handler.dart';
 
-/// 相机服务 (Android 专用优化版)
 class CameraService {
   CameraController? _controller;
   List<CameraDescription>? _cameras;
   bool _isInitialized = false;
 
-  /// 获取相机控制器
   CameraController? get controller => _controller;
 
-  /// 是否已初始化
   bool get isInitialized => _isInitialized && _controller != null;
 
-  /// 获取相机传感器方向
   int get sensorOrientation => _controller?.description.sensorOrientation ?? 90;
 
-  /// 是否是前置摄像头
-  bool get isFrontCamera =>
-      _controller?.description.lensDirection == CameraLensDirection.front;
-
-  /// 初始化相机
-  Future<bool> initialize({bool preferBackCamera = true}) async {
+  Future<bool> initialize() async {
     try {
       // 1. 请求权限
       if (!await Permission.camera.request().isGranted) {
@@ -36,19 +27,12 @@ class CameraService {
         return false;
       }
 
-      // 3. 选择前后置
-      final cameraDirection = preferBackCamera
-          ? CameraLensDirection.back
-          : CameraLensDirection.front;
-
+      // 3. 选择后置摄像头
       final selectedCamera = _cameras!.firstWhere(
-        (c) => c.lensDirection == cameraDirection,
+        (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => _cameras!.first,
       );
 
-      // 4. 创建控制器
-      // Android 核心优化：强制使用 nv21，这是 ML Kit 在 Android 上必须的格式
-      // 分辨率设为 high，兼顾扫码精度和拍照清晰度
       _controller = CameraController(
         selectedCamera,
         ResolutionPreset.high,
@@ -68,11 +52,10 @@ class CameraService {
     }
   }
 
-  /// 开始图像流 (扫码用)
+  /// 启动图像流
   Future<void> startImageStream(void Function(CameraImage) onImage) async {
     if (_controller == null || !_isInitialized) return;
 
-    // 防止重复启动导致 Crash
     if (_controller!.value.isStreamingImages) return;
 
     try {
@@ -82,11 +65,10 @@ class CameraService {
     }
   }
 
-  /// 停止图像流
+  // 停止图像流
   Future<void> stopImageStream() async {
     if (_controller == null || !_isInitialized) return;
 
-    // 关键修复：只有在流运行中才停止，否则 Android 会抛出 CameraException
     if (!_controller!.value.isStreamingImages) return;
 
     try {
@@ -96,14 +78,13 @@ class CameraService {
     }
   }
 
-  /// 拍照
-  /// Android 关键修复：拍照前必须停止 ImageStream，否则会 Crash 或卡死
+  //拍照前必须停止 ImageStream，否则会 Crash 或卡死
   Future<XFile?> takePicture() async {
     if (_controller == null || !_isInitialized) return null;
 
     try {
-      // 1. 如果正在扫码(流开启中)，必须先停止流
-      // 注意：这会导致画面瞬间卡顿一下，这是 Android 硬件限制正常的
+      //  如果正在扫码(流开启中)，必须先停止流
+
       if (_controller!.value.isStreamingImages) {
         await _controller!.stopImageStream();
         // 稍微给一点缓冲时间让相机硬件状态复位
@@ -117,24 +98,6 @@ class CameraService {
       debugPrint('拍照失败: $e');
       return null;
     }
-  }
-
-  /// 切换前后置
-  Future<bool> switchCamera() async {
-    if (_cameras == null || _cameras!.length < 2) return false;
-
-    // 获取当前反向的镜头方向
-    final newDirection = isFrontCamera
-        ? CameraLensDirection.back
-        : CameraLensDirection.front;
-
-    // 释放旧控制器
-    await dispose();
-
-    // 重新初始化
-    return initialize(
-      preferBackCamera: newDirection == CameraLensDirection.back,
-    );
   }
 
   /// 释放资源

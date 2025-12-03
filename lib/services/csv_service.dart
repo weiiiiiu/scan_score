@@ -24,11 +24,9 @@ class CsvService {
 
     final csvString = await file.readAsString();
 
-    // 使用 Isolate.run 将 CSV 解析放到后台线程
     return await Isolate.run(() => _parseCsvInIsolate(csvString));
   }
 
-  /// 在 Isolate 中解析 CSV (必须是顶层或静态方法)
   static List<Participant> _parseCsvInIsolate(String csvString) {
     final List<List<dynamic>> rows = const CsvToListConverter().convert(
       csvString,
@@ -58,12 +56,10 @@ class CsvService {
 
   /// 保存参赛者数据到 CSV 文件 (使用 Isolate 在后台线程生成)
   Future<void> saveCsv(String filePath, List<Participant> participants) async {
-    // 使用 Isolate.run 将 CSV 生成放到后台线程
     final csvString = await Isolate.run(
       () => _generateCsvInIsolate(participants),
     );
 
-    // 确保目录存在
     final dir = File(filePath).parent;
     if (!await dir.exists()) {
       await dir.create(recursive: true);
@@ -73,7 +69,6 @@ class CsvService {
     await File(filePath).writeAsString(csvString);
   }
 
-  /// 在 Isolate 中生成 CSV 字符串
   static String _generateCsvInIsolate(List<Participant> participants) {
     // 构建 CSV 数据（包含表头）
     // 表头: 参赛证号,姓名,组别,项目,队名,辅导员,作品码,检录状态,分数,评分照片
@@ -172,19 +167,19 @@ class CsvService {
     }
   }
 
-  /// 从工作目录加载 CSV
+  // 从工作目录加载 CSV
   Future<List<Participant>> loadWorkingCsv() async {
     final workingPath = await _storageService.getWorkingCsvPath();
     return await loadCsv(workingPath);
   }
 
-  /// 保存到工作目录
+  // 保存到工作目录
   Future<void> saveWorkingCsv(List<Participant> participants) async {
     final workingPath = await _storageService.getWorkingCsvPath();
     await saveCsv(workingPath, participants);
   }
 
-  /// 检查工作 CSV 是否存在
+  // 检查工作 CSV 是否存在
   Future<bool> hasWorkingCsv() async {
     return await _storageService.workingCsvExists();
   }

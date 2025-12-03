@@ -36,11 +36,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFBBDEFB), // 浅蓝
-              Color(0xFFE3F2FD), // 更浅的蓝
-              Color(0xFFF5F5F5), // 底部渐变到浅灰
-            ],
+            colors: [Color(0xFFBBDEFB), Color(0xFFE3F2FD), Color(0xFFF5F5F5)],
           ),
         ),
         child: SafeArea(
@@ -83,7 +79,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                     ),
 
-                    // 底部功能按钮（带动画）
+                    // 底部功能按钮
                     Positioned(
                       left: 0,
                       right: 0,
@@ -108,7 +104,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// 构建底部功能按钮（iPad Dock风格磨砂玻璃）
+  /// 构建底部功能按钮
   Widget _buildBottomButtons(ParticipantProvider provider) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -290,7 +286,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   /// 导入 CSV 文件（需要密码验证）
   Future<void> _importCsv(ParticipantProvider provider) async {
-    // 导入前需要密码验证
     final verified = await AuthDialog.show(context, title: '导入验证');
     if (!verified) return;
 
@@ -350,7 +345,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-/// Dock图标组件（iOS风格彩色圆角方块）
+/// Dock图标组件
 class _DockIcon extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -374,7 +369,6 @@ class _DockIcon extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // iOS风格彩色圆角方块图标
           Container(
             width: 56,
             height: 56,
