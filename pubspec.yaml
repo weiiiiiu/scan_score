@@ -30,6 +30,7 @@ dependencies:
   device_info_plus: ^10.1.0
   # 用于 Android 11+ 调用系统原生保存 (Scoped Storage)
   flutter_file_dialog: ^3.0.2
+  liquid_glass_renderer: ^0.2.0-dev.4
 
 dev_dependencies:
   flutter_test:

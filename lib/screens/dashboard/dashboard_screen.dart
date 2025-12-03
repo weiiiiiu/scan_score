@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 import 'package:provider/provider.dart';
 import '../../config/routes.dart';
 import '../../providers/participant_provider.dart';
@@ -19,6 +20,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final _searchController = TextEditingController();
   String _searchQuery = '';
   bool _isImporting = false;
+  bool _isScrolling = false;
 
   @override
   void dispose() {
@@ -29,93 +31,149 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('检录评分系统'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      body: LoadingOverlay(
-        isLoading: _isImporting,
-        message: '正在导入...',
-        child: Consumer<ParticipantProvider>(
-          builder: (context, provider, child) {
-            return Column(
-              children: [
-                // 顶部功能按钮
-                _buildTopButtons(provider),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFFBBDEFB), // 浅蓝
+              Color(0xFFE3F2FD), // 更浅的蓝
+              Color(0xFFF5F5F5), // 底部渐变到浅灰
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: LoadingOverlay(
+            isLoading: _isImporting,
+            message: '正在导入...',
+            child: Consumer<ParticipantProvider>(
+              builder: (context, provider, child) {
+                return Stack(
+                  children: [
+                    Column(
+                      children: [
+                        // 搜索栏
+                        if (provider.hasData) _buildSearchBar(),
 
-                // 搜索栏
-                if (provider.hasData) _buildSearchBar(),
+                        // 数据表格区域
+                        Expanded(
+                          child: provider.hasData
+                              ? NotificationListener<ScrollNotification>(
+                                  onNotification: (notification) {
+                                    if (notification
+                                        is ScrollStartNotification) {
+                                      if (!_isScrolling) {
+                                        setState(() => _isScrolling = true);
+                                      }
+                                    } else if (notification
+                                        is ScrollEndNotification) {
+                                      if (_isScrolling) {
+                                        setState(() => _isScrolling = false);
+                                      }
+                                    }
+                                    return false;
+                                  },
+                                  child: ParticipantDataTable(
+                                    searchQuery: _searchQuery,
+                                  ),
+                                )
+                              : _buildEmptyState(provider),
+                        ),
+                      ],
+                    ),
 
-                // 数据表格区域
-                Expanded(
-                  child: provider.hasData
-                      ? ParticipantDataTable(searchQuery: _searchQuery)
-                      : _buildEmptyState(provider),
-                ),
-              ],
-            );
-          },
+                    // 底部功能按钮（带动画）
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: AnimatedSlide(
+                        duration: const Duration(milliseconds: 200),
+                        offset: _isScrolling ? const Offset(0, 1) : Offset.zero,
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 200),
+                          opacity: _isScrolling ? 0.0 : 1.0,
+                          child: _buildBottomButtons(provider),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
   }
 
-  /// 构建顶部功能按钮
-  Widget _buildTopButtons(ParticipantProvider provider) {
-    return Container(
+  /// 构建底部功能按钮（iPad Dock风格磨砂玻璃）
+  Widget _buildBottomButtons(ParticipantProvider provider) {
+    return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+      child: LiquidGlass.withOwnLayer(
+        settings: const LiquidGlassSettings(
+          thickness: 12,
+          blur: 25,
+          glassColor: Color(0x30FFFFFF),
+          lightIntensity: 1.1,
+          ambientStrength: 0.6,
+          saturation: 1.0,
+        ),
+        shape: LiquidRoundedSuperellipse(borderRadius: 28),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              // 导入按钮
+              Expanded(
+                child: _DockIcon(
+                  icon: Icons.upload_file,
+                  label: '导入',
+                  color: Colors.blue,
+                  onPressed: () => _importCsv(provider),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // 检录按钮
+              Expanded(
+                child: _DockIcon(
+                  icon: Icons.qr_code_scanner,
+                  label: '检录',
+                  color: Colors.green,
+                  onPressed: provider.hasData
+                      ? () => _navigateToCheckin()
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 10),
+              // 评分按钮
+              Expanded(
+                child: _DockIcon(
+                  icon: Icons.star_rate,
+                  label: '评分',
+                  color: Colors.orange,
+                  onPressed: provider.hasData
+                      ? () => _navigateToScoring()
+                      : null,
+                ),
+              ),
+              const SizedBox(width: 10),
+              // 导出按钮
+              Expanded(
+                child: _DockIcon(
+                  icon: Icons.download,
+                  label: '导出',
+                  color: Colors.teal,
+                  onPressed: provider.hasData
+                      ? () => _navigateToExport()
+                      : null,
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // 导入按钮
-          Expanded(
-            child: _ActionButton(
-              icon: Icons.upload_file,
-              label: '导入名单',
-              color: Colors.blue,
-              onPressed: () => _importCsv(provider),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // 检录按钮
-          Expanded(
-            child: _ActionButton(
-              icon: Icons.qr_code_scanner,
-              label: '检录',
-              color: Colors.green,
-              onPressed: provider.hasData ? () => _navigateToCheckin() : null,
-            ),
-          ),
-          const SizedBox(width: 8),
-          // 评分按钮
-          Expanded(
-            child: _ActionButton(
-              icon: Icons.star_rate,
-              label: '评分',
-              color: Colors.orange,
-              onPressed: provider.hasData ? () => _navigateToScoring() : null,
-            ),
-          ),
-          const SizedBox(width: 8),
-          // 导出按钮
-          Expanded(
-            child: _ActionButton(
-              icon: Icons.download,
-              label: '导出',
-              color: Colors.teal,
-              onPressed: provider.hasData ? () => _navigateToExport() : null,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -140,9 +198,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   },
                 )
               : null,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           filled: true,
-          fillColor: Colors.grey[100],
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
         ),
         onChanged: (value) {
           // 检查是否输入了admin，进入管理页面
@@ -288,14 +352,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-/// 功能按钮组件
-class _ActionButton extends StatelessWidget {
+/// Dock图标组件（iOS风格彩色圆角方块）
+class _DockIcon extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
   final VoidCallback? onPressed;
 
-  const _ActionButton({
+  const _DockIcon({
     required this.icon,
     required this.label,
     required this.color,
@@ -305,35 +369,45 @@ class _ActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isEnabled = onPressed != null;
+    final effectiveColor = isEnabled ? color : Colors.grey[400]!;
 
-    return Material(
-      color: isEnabled ? color : Colors.grey[300],
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                color: isEnabled ? Colors.white : Colors.grey[500],
-                size: 28,
+    return GestureDetector(
+      onTap: onPressed,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // iOS风格彩色圆角方块图标
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [effectiveColor.withValues(alpha: 0.9), effectiveColor],
               ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  color: isEnabled ? Colors.white : Colors.grey[500],
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: effectiveColor.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
                 ),
-              ),
-            ],
+              ],
+            ),
+            child: Icon(icon, color: Colors.white, size: 28),
           ),
-        ),
+          const SizedBox(height: 6),
+          // 标签
+          Text(
+            label,
+            style: TextStyle(
+              color: isEnabled ? Colors.black87 : Colors.grey,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }
