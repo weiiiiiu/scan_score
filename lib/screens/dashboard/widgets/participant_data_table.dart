@@ -21,6 +21,13 @@ class ParticipantDataTable extends StatefulWidget {
 class _ParticipantDataTableState extends State<ParticipantDataTable> {
   bool _sortAscending = true;
 
+  // 预定义颜色，避免每次 build 重新创建
+  static final _blueLight = Colors.blue.shade50;
+  static final _blueDark = Colors.blue.shade700;
+  static final _greyLight = Colors.grey.shade300;
+  static final _greyDark = Colors.grey.shade600;
+  static final _greyText = Colors.grey.shade700;
+
   @override
   Widget build(BuildContext context) {
     return Consumer<ParticipantProvider>(
@@ -50,8 +57,18 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 itemCount: data.length,
+                cacheExtent: 500, // 增加缓存区域
                 itemBuilder: (context, index) {
-                  return _buildParticipantCard(data[index], index);
+                  return _ParticipantCard(
+                    key: ValueKey(data[index].id),
+                    participant: data[index],
+                    onTap: widget.onRowTap,
+                    blueLight: _blueLight,
+                    blueDark: _blueDark,
+                    greyLight: _greyLight,
+                    greyDark: _greyDark,
+                    greyText: _greyText,
+                  );
                 },
               ),
             ),
@@ -106,13 +123,45 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
     );
   }
 
-  Widget _buildParticipantCard(Participant p, int index) {
-    final isCheckedIn = p.checkStatus == 1;
+  List<Participant> _sortData(List<Participant> data) {
+    final sorted = List<Participant>.from(data);
+    sorted.sort((a, b) {
+      final result = a.memberCode.compareTo(b.memberCode);
+      return _sortAscending ? result : -result;
+    });
+    return sorted;
+  }
+}
+
+/// 独立的卡片组件，避免不必要的重建
+class _ParticipantCard extends StatelessWidget {
+  final Participant participant;
+  final void Function(Participant)? onTap;
+  final Color blueLight;
+  final Color blueDark;
+  final Color greyLight;
+  final Color greyDark;
+  final Color greyText;
+
+  const _ParticipantCard({
+    super.key,
+    required this.participant,
+    this.onTap,
+    required this.blueLight,
+    required this.blueDark,
+    required this.greyLight,
+    required this.greyDark,
+    required this.greyText,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isCheckedIn = participant.checkStatus == 1;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: InkWell(
-        onTap: widget.onRowTap != null ? () => widget.onRowTap!(p) : null,
+        onTap: onTap != null ? () => onTap!(participant) : null,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -125,52 +174,41 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
                 children: [
                   // 参赛证号
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
+                      color: blueLight,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      p.memberCode,
+                      participant.memberCode,
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
-                        color: Colors.blue.shade700,
+                        color: blueDark,
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // 姓名 - 允许换行显示完整
+                  // 姓名
                   Expanded(
                     child: Text(
-                      p.name,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      participant.name,
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                     ),
                   ),
                   const SizedBox(width: 8),
                   // 检录状态
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: isCheckedIn ? Colors.green : Colors.grey.shade300,
+                      color: isCheckedIn ? Colors.green : greyLight,
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
                       isCheckedIn ? '已检录' : '未检录',
                       style: TextStyle(
                         fontSize: 11,
-                        color: isCheckedIn
-                            ? Colors.white
-                            : Colors.grey.shade700,
+                        color: isCheckedIn ? Colors.white : greyText,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -181,10 +219,10 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
               // 第二行：组别、项目、队名、辅导员
               Row(
                 children: [
-                  _buildInfoChip('组别', p.group),
-                  _buildInfoChip('项目', p.project),
-                  _buildInfoChip('队名', p.teamName),
-                  _buildInfoChip('辅导员', p.instructorName),
+                  _InfoChip(label: '组别', value: participant.group, greyDark: greyDark),
+                  _InfoChip(label: '项目', value: participant.project, greyDark: greyDark),
+                  _InfoChip(label: '队名', value: participant.teamName, greyDark: greyDark),
+                  _InfoChip(label: '辅导员', value: participant.instructorName, greyDark: greyDark),
                 ],
               ),
             ],
@@ -193,18 +231,29 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
       ),
     );
   }
+}
 
-  Widget _buildInfoChip(String label, String? value) {
+/// 信息标签组件
+class _InfoChip extends StatelessWidget {
+  final String label;
+  final String? value;
+  final Color greyDark;
+
+  const _InfoChip({
+    required this.label,
+    required this.value,
+    required this.greyDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Expanded(
       child: Padding(
         padding: const EdgeInsets.only(right: 4),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              label,
-              style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
-            ),
+            Text(label, style: TextStyle(fontSize: 10, color: greyDark)),
             Text(
               value ?? '-',
               style: const TextStyle(fontSize: 12),
@@ -214,14 +263,5 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
         ),
       ),
     );
-  }
-
-  List<Participant> _sortData(List<Participant> data) {
-    final sorted = List<Participant>.from(data);
-    sorted.sort((a, b) {
-      final result = a.memberCode.compareTo(b.memberCode);
-      return _sortAscending ? result : -result;
-    });
-    return sorted;
   }
 }
