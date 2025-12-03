@@ -79,47 +79,77 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
   }
 
   Widget _buildHeader(int count) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Row(
-        children: [
-          Text('参赛者名单', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '共 $count 人',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-                fontWeight: FontWeight.bold,
+    return Consumer<ParticipantProvider>(
+      builder: (context, provider, child) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 第一行：标题和排序
+              Row(
+                children: [
+                  Text('参赛者名单', style: Theme.of(context).textTheme.titleMedium),
+                  const Spacer(),
+                  // 按证号排序
+                  TextButton.icon(
+                    onPressed: () =>
+                        setState(() => _sortAscending = !_sortAscending),
+                    icon: Icon(
+                      _sortAscending
+                          ? Icons.arrow_upward
+                          : Icons.arrow_downward,
+                      size: 16,
+                    ),
+                    label: Text(
+                      '证号${_sortAscending ? "↑" : "↓"}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ],
               ),
-            ),
+              const SizedBox(height: 6),
+              // 第二行：统计信息
+              Row(
+                children: [
+                  _StatBadge(
+                    label: '总',
+                    value: provider.totalCount,
+                    color: Colors.blue,
+                  ),
+                  const SizedBox(width: 8),
+                  _StatBadge(
+                    label: '已检录',
+                    value: provider.checkedInCount,
+                    color: Colors.green,
+                  ),
+                  const SizedBox(width: 8),
+                  _StatBadge(
+                    label: '未检录',
+                    value: provider.uncheckedCount,
+                    color: Colors.orange,
+                  ),
+                  const SizedBox(width: 8),
+                  _StatBadge(
+                    label: '已评分',
+                    value: provider.scoredCount,
+                    color: Colors.purple,
+                  ),
+                  if (count != provider.totalCount) ...[
+                    const SizedBox(width: 8),
+                    _StatBadge(label: '筛选', value: count, color: Colors.grey),
+                  ],
+                ],
+              ),
+            ],
           ),
-          const Spacer(),
-          // 按证号排序
-          TextButton.icon(
-            onPressed: () => setState(() => _sortAscending = !_sortAscending),
-            icon: Icon(
-              _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-              size: 16,
-            ),
-            label: Text(
-              '证号${_sortAscending ? "↑" : "↓"}',
-              style: const TextStyle(fontSize: 12),
-            ),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -130,6 +160,38 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
       return _sortAscending ? result : -result;
     });
     return sorted;
+  }
+}
+
+/// 统计标签组件
+class _StatBadge extends StatelessWidget {
+  final String label;
+  final int value;
+  final Color color;
+
+  const _StatBadge({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        '$label $value',
+        style: TextStyle(
+          fontSize: 11,
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
   }
 }
 
@@ -174,7 +236,10 @@ class _ParticipantCard extends StatelessWidget {
                 children: [
                   // 参赛证号
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: blueLight,
                       borderRadius: BorderRadius.circular(4),
@@ -193,13 +258,19 @@ class _ParticipantCard extends StatelessWidget {
                   Expanded(
                     child: Text(
                       participant.name,
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   // 检录状态
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: isCheckedIn ? Colors.green : greyLight,
                       borderRadius: BorderRadius.circular(10),
@@ -219,10 +290,26 @@ class _ParticipantCard extends StatelessWidget {
               // 第二行：组别、项目、队名、辅导员
               Row(
                 children: [
-                  _InfoChip(label: '组别', value: participant.group, greyDark: greyDark),
-                  _InfoChip(label: '项目', value: participant.project, greyDark: greyDark),
-                  _InfoChip(label: '队名', value: participant.teamName, greyDark: greyDark),
-                  _InfoChip(label: '辅导员', value: participant.instructorName, greyDark: greyDark),
+                  _InfoChip(
+                    label: '组别',
+                    value: participant.group,
+                    greyDark: greyDark,
+                  ),
+                  _InfoChip(
+                    label: '项目',
+                    value: participant.project,
+                    greyDark: greyDark,
+                  ),
+                  _InfoChip(
+                    label: '队名',
+                    value: participant.teamName,
+                    greyDark: greyDark,
+                  ),
+                  _InfoChip(
+                    label: '辅导员',
+                    value: participant.instructorName,
+                    greyDark: greyDark,
+                  ),
                 ],
               ),
             ],

@@ -50,8 +50,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           builder: (context, provider, child) {
             return Column(
               children: [
-                // 统计卡片区域
-                _buildStatsSection(provider),
+                // 顶部功能按钮
+                _buildTopButtons(provider),
 
                 // 搜索栏
                 if (provider.hasData) _buildSearchBar(),
@@ -62,9 +62,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ? ParticipantDataTable(searchQuery: _searchQuery)
                       : _buildEmptyState(provider),
                 ),
-
-                // 底部功能按钮
-                _buildBottomButtons(provider),
               ],
             );
           },
@@ -73,45 +70,59 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// 构建统计卡片区域
-  Widget _buildStatsSection(ParticipantProvider provider) {
+  /// 构建顶部功能按钮
+  Widget _buildTopButtons(ParticipantProvider provider) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Row(
         children: [
+          // 导入按钮
           Expanded(
-            child: _StatCard(
-              title: '总人数',
-              value: provider.totalCount.toString(),
-              icon: Icons.people,
+            child: _ActionButton(
+              icon: Icons.upload_file,
+              label: '导入名单',
               color: Colors.blue,
+              onPressed: () => _importCsv(provider),
             ),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
+          // 检录按钮
           Expanded(
-            child: _StatCard(
-              title: '已检录',
-              value: provider.checkedInCount.toString(),
-              icon: Icons.check_circle,
+            child: _ActionButton(
+              icon: Icons.qr_code_scanner,
+              label: '检录',
               color: Colors.green,
+              onPressed: provider.hasData ? () => _navigateToCheckin() : null,
             ),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
+          // 评分按钮
           Expanded(
-            child: _StatCard(
-              title: '未检录',
-              value: provider.uncheckedCount.toString(),
-              icon: Icons.pending,
+            child: _ActionButton(
+              icon: Icons.star_rate,
+              label: '评分',
               color: Colors.orange,
+              onPressed: provider.hasData ? () => _navigateToScoring() : null,
             ),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
+          // 导出按钮
           Expanded(
-            child: _StatCard(
-              title: '已评分',
-              value: provider.scoredCount.toString(),
-              icon: Icons.star,
-              color: Colors.purple,
+            child: _ActionButton(
+              icon: Icons.download,
+              label: '导出',
+              color: Colors.teal,
+              onPressed: provider.hasData ? () => _navigateToExport() : null,
             ),
           ),
         ],
@@ -225,68 +236,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// 构建底部功能按钮
-  Widget _buildBottomButtons(ParticipantProvider provider) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 4,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Row(
-          children: [
-            // 导入按钮
-            Expanded(
-              child: _ActionButton(
-                icon: Icons.upload_file,
-                label: '导入名单',
-                color: Colors.blue,
-                onPressed: () => _importCsv(provider),
-              ),
-            ),
-            const SizedBox(width: 12),
-            // 检录按钮
-            Expanded(
-              child: _ActionButton(
-                icon: Icons.qr_code_scanner,
-                label: '检录',
-                color: Colors.green,
-                onPressed: provider.hasData ? () => _navigateToCheckin() : null,
-              ),
-            ),
-            const SizedBox(width: 12),
-            // 评分按钮
-            Expanded(
-              child: _ActionButton(
-                icon: Icons.star_rate,
-                label: '评分',
-                color: Colors.orange,
-                onPressed: provider.hasData ? () => _navigateToScoring() : null,
-              ),
-            ),
-            const SizedBox(width: 12),
-            // 导出按钮
-            Expanded(
-              child: _ActionButton(
-                icon: Icons.download,
-                label: '导出',
-                color: Colors.teal,
-                onPressed: provider.hasData ? () => _navigateToExport() : null,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   /// 导入 CSV 文件（需要密码验证）
   Future<void> _importCsv(ParticipantProvider provider) async {
     // 导入前需要密码验证
@@ -346,57 +295,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (verified && mounted) {
       Navigator.pushNamed(context, AppRoutes.export);
     }
-  }
-}
-
-/// 统计卡片组件
-class _StatCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  const _StatCard({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 20, color: color),
-            const SizedBox(height: 4),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                value,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-            ),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                title,
-                style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 
