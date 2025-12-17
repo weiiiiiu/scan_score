@@ -72,6 +72,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   },
                                   child: ParticipantDataTable(
                                     searchQuery: _searchQuery,
+                                    onRowTap: (participant) {
+                                      AppRoutes.navigateToParticipantDetail(
+                                        context,
+                                        participant,
+                                      );
+                                    },
                                   ),
                                 )
                               : _buildEmptyState(provider),

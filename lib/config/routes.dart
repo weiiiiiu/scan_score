@@ -5,6 +5,8 @@ import '../screens/checkin/checkin_screen.dart';
 import '../screens/scoring/scoring_screen.dart';
 import '../screens/management/management_screen.dart';
 import '../screens/export/export_screen.dart';
+import '../screens/participant_detail/participant_detail_screen.dart';
+import '../models/participant.dart';
 
 /// 应用路由配置
 class AppRoutes {
@@ -46,5 +48,19 @@ class AppRoutes {
   /// 返回到首页
   static void goHome(BuildContext context) {
     Navigator.pushNamedAndRemoveUntil(context, dashboard, (route) => false);
+  }
+
+  /// 导航到参赛者详情页面
+  /// 返回 true 表示保存了数据，false 或 null 表示取消
+  static Future<bool?> navigateToParticipantDetail(
+    BuildContext context,
+    Participant participant,
+  ) {
+    return Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ParticipantDetailScreen(participant: participant),
+      ),
+    );
   }
 }
