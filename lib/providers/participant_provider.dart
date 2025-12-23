@@ -268,6 +268,58 @@ class ParticipantProvider extends ChangeNotifier {
     }
   }
 
+  /// 获取当前应评的名次（已评人数 + 1）
+  int getCurrentRank() => scoredCount + 1;
+
+  /// 提交名次（简化版，自动计算名次）
+  Future<void> submitRank(String workCode, String newPhotoPath) async {
+    try {
+      final participant = findByWorkCode(workCode);
+      if (participant == null) {
+        throw Exception('作品不存在: $workCode');
+      }
+
+      // 获取当前名次
+      final rank = getCurrentRank();
+
+      // 如果存在旧照片，删除它
+      if (participant.evidenceImg != null &&
+          participant.evidenceImg!.isNotEmpty) {
+        try {
+          await _fileService.deleteFile(participant.evidenceImg!);
+        } catch (e) {
+          debugPrint('删除旧照片失败: $e');
+        }
+      }
+
+      // 更新参赛者数据（score字段存储名次）
+      final updated = participant.copyWith(
+        score: rank.toDouble(),
+        evidenceImg: newPhotoPath,
+      );
+
+      await updateParticipant(updated);
+    } catch (e) {
+      _error = '提交名次失败: $e';
+      debugPrint(_error);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// 检查参赛证号是否重复（排除指定ID的参赛者）
+  bool isMemberCodeDuplicate(String code, int excludeId) {
+    return _participants.any((p) => p.memberCode == code && p.id != excludeId);
+  }
+
+  /// 检查作品码是否重复（排除指定ID的参赛者）
+  bool isWorkCodeDuplicate(String code, int excludeId) {
+    if (code.isEmpty) return false;
+    return _participants.any(
+      (p) => p.workCode == code && p.id != excludeId,
+    );
+  }
+
   // ===== 辅助方法 =====
 
   /// 清空所有数据

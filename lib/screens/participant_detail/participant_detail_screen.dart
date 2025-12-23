@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../../models/participant.dart';
 import '../../providers/participant_provider.dart';
 
-/// 参赛者详情编辑页面
+/// 参赛者详情编辑页面 - 所有字段可编辑
 class ParticipantDetailScreen extends StatefulWidget {
   final Participant participant;
 
@@ -20,20 +20,29 @@ class ParticipantDetailScreen extends StatefulWidget {
 class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
   final _formKey = GlobalKey<FormState>();
 
+  late TextEditingController _memberCodeController;
   late TextEditingController _nameController;
   late TextEditingController _groupController;
   late TextEditingController _projectController;
   late TextEditingController _teamNameController;
   late TextEditingController _instructorController;
+  late TextEditingController _workCodeController;
+  late TextEditingController _rankController;
 
+  late bool _isCheckedIn;
   bool _hasChanges = false;
   bool _isSaving = false;
+
+  String? _memberCodeError;
+  String? _workCodeError;
 
   @override
   void initState() {
     super.initState();
     final p = widget.participant;
 
+    _memberCodeController = TextEditingController(text: p.memberCode)
+      ..addListener(_onFieldChanged);
     _nameController = TextEditingController(text: p.name)
       ..addListener(_onFieldChanged);
     _groupController = TextEditingController(text: p.group ?? '')
@@ -44,21 +53,38 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
       ..addListener(_onFieldChanged);
     _instructorController = TextEditingController(text: p.instructorName ?? '')
       ..addListener(_onFieldChanged);
+    _workCodeController = TextEditingController(text: p.workCode ?? '')
+      ..addListener(_onFieldChanged);
+    _rankController = TextEditingController(
+      text: p.score != null ? p.score!.toInt().toString() : '',
+    )..addListener(_onFieldChanged);
+
+    _isCheckedIn = p.checkStatus == 1;
   }
 
   void _onFieldChanged() {
     if (!_hasChanges) {
       setState(() => _hasChanges = true);
     }
+    // 清除错误提示
+    if (_memberCodeError != null || _workCodeError != null) {
+      setState(() {
+        _memberCodeError = null;
+        _workCodeError = null;
+      });
+    }
   }
 
   @override
   void dispose() {
+    _memberCodeController.dispose();
     _nameController.dispose();
     _groupController.dispose();
     _projectController.dispose();
     _teamNameController.dispose();
     _instructorController.dispose();
+    _workCodeController.dispose();
+    _rankController.dispose();
     super.dispose();
   }
 
@@ -67,11 +93,37 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
       return;
     }
 
+    final provider = context.read<ParticipantProvider>();
+    final newMemberCode = _memberCodeController.text.trim();
+    final newWorkCode = _workCodeController.text.trim();
+
+    // 判重检查
+    if (provider.isMemberCodeDuplicate(newMemberCode, widget.participant.id)) {
+      setState(() {
+        _memberCodeError = '参赛证号已存在';
+      });
+      return;
+    }
+
+    if (newWorkCode.isNotEmpty &&
+        provider.isWorkCodeDuplicate(newWorkCode, widget.participant.id)) {
+      setState(() {
+        _workCodeError = '作品码已被使用';
+      });
+      return;
+    }
+
     setState(() => _isSaving = true);
 
     try {
-      final provider = context.read<ParticipantProvider>();
+      final rankText = _rankController.text.trim();
+      double? rank;
+      if (rankText.isNotEmpty) {
+        rank = double.tryParse(rankText);
+      }
+
       final updated = widget.participant.copyWith(
+        memberCode: newMemberCode,
         name: _nameController.text.trim(),
         group: _groupController.text.trim().isEmpty
             ? null
@@ -85,6 +137,9 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
         instructorName: _instructorController.text.trim().isEmpty
             ? null
             : _instructorController.text.trim(),
+        workCode: newWorkCode.isEmpty ? null : newWorkCode,
+        checkStatus: _isCheckedIn ? 1 : 0,
+        score: rank,
       );
 
       await provider.updateParticipant(updated);
@@ -183,20 +238,20 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 头部卡片 - 显示参赛者图标和证号
+                // 头部卡片
                 _buildHeaderCard(),
                 const SizedBox(height: 24),
 
                 // 基本信息
                 _buildSectionTitle('基本信息'),
                 const SizedBox(height: 12),
-                _buildEditableFields(),
+                _buildBasicInfoFields(),
                 const SizedBox(height: 24),
 
-                // 检录和评分信息（只读）
+                // 检录和评分信息
                 _buildSectionTitle('检录和评分信息'),
                 const SizedBox(height: 12),
-                _buildReadOnlyInfo(),
+                _buildScoringFields(),
               ],
             ),
           ),
@@ -216,8 +271,8 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
               radius: 30,
               backgroundColor: Theme.of(context).colorScheme.primary,
               child: Text(
-                widget.participant.name.isNotEmpty
-                    ? widget.participant.name[0]
+                _nameController.text.isNotEmpty
+                    ? _nameController.text[0]
                     : '?',
                 style: const TextStyle(
                   fontSize: 24,
@@ -232,7 +287,7 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.participant.name,
+                    _nameController.text.isEmpty ? '未填写' : _nameController.text,
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -240,7 +295,7 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '参赛证号: ${widget.participant.memberCode}',
+                    'ID: ${widget.participant.id}',
                     style: TextStyle(
                       fontSize: 14,
                       color: Colors.grey[600],
@@ -266,9 +321,30 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
     );
   }
 
-  Widget _buildEditableFields() {
+  Widget _buildBasicInfoFields() {
     return Column(
       children: [
+        // 参赛证号 - 可编辑，判重
+        TextFormField(
+          controller: _memberCodeController,
+          decoration: InputDecoration(
+            labelText: '参赛证号',
+            hintText: '请输入参赛证号',
+            prefixIcon: const Icon(Icons.badge),
+            helperText: '必填项，不可与其他选手重复',
+            errorText: _memberCodeError,
+          ),
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) {
+              return '参赛证号不能为空';
+            }
+            return null;
+          },
+          enabled: !_isSaving,
+        ),
+        const SizedBox(height: 16),
+
+        // 姓名
         TextFormField(
           controller: _nameController,
           decoration: const InputDecoration(
@@ -286,16 +362,8 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
           enabled: !_isSaving,
         ),
         const SizedBox(height: 16),
-        TextFormField(
-          initialValue: widget.participant.memberCode,
-          decoration: const InputDecoration(
-            labelText: '参赛证号',
-            prefixIcon: Icon(Icons.badge),
-            helperText: '不可修改',
-          ),
-          enabled: false,
-        ),
-        const SizedBox(height: 16),
+
+        // 组别
         TextFormField(
           controller: _groupController,
           decoration: const InputDecoration(
@@ -306,6 +374,8 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
           enabled: !_isSaving,
         ),
         const SizedBox(height: 16),
+
+        // 项目
         TextFormField(
           controller: _projectController,
           decoration: const InputDecoration(
@@ -316,6 +386,8 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
           enabled: !_isSaving,
         ),
         const SizedBox(height: 16),
+
+        // 队名
         TextFormField(
           controller: _teamNameController,
           decoration: const InputDecoration(
@@ -326,6 +398,8 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
           enabled: !_isSaving,
         ),
         const SizedBox(height: 16),
+
+        // 辅导员
         TextFormField(
           controller: _instructorController,
           decoration: const InputDecoration(
@@ -339,91 +413,107 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
     );
   }
 
-  Widget _buildReadOnlyInfo() {
-    final p = widget.participant;
-    final isCheckedIn = p.checkStatus == 1;
-    final hasScore = p.score != null;
-
+  Widget _buildScoringFields() {
     return Card(
-      color: Colors.grey[100],
+      color: Colors.grey[50],
       elevation: 0,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildInfoRow(
-              '检录状态',
-              isCheckedIn ? '已检录' : '未检录',
-              isCheckedIn ? Colors.green : Colors.orange,
+            // 作品码 - 可编辑，判重
+            TextFormField(
+              controller: _workCodeController,
+              decoration: InputDecoration(
+                labelText: '作品码',
+                hintText: '请输入作品码',
+                prefixIcon: const Icon(Icons.qr_code),
+                helperText: '不可与其他选手重复',
+                errorText: _workCodeError,
+              ),
+              enabled: !_isSaving,
             ),
-            if (p.workCode != null && p.workCode!.isNotEmpty) ...[
-              const Divider(height: 20),
-              _buildInfoRow(
-                '作品码',
-                p.workCode!,
-                Colors.blue,
-              ),
-            ],
-            if (hasScore) ...[
-              const Divider(height: 20),
-              _buildInfoRow(
-                '分数',
-                p.score.toString(),
-                Colors.purple,
-              ),
-            ],
-            if (!isCheckedIn && !hasScore) ...[
-              const SizedBox(height: 8),
-              Text(
-                '提示：检录和评分信息请在对应页面操作',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey[600],
-                  fontStyle: FontStyle.italic,
+            const SizedBox(height: 16),
+
+            // 检录状态
+            Row(
+              children: [
+                const Icon(Icons.check_circle_outline, color: Colors.grey),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    '检录状态',
+                    style: TextStyle(fontSize: 16),
+                  ),
                 ),
+                Switch(
+                  value: _isCheckedIn,
+                  onChanged: _isSaving
+                      ? null
+                      : (value) {
+                          setState(() {
+                            _isCheckedIn = value;
+                            _hasChanges = true;
+                          });
+                        },
+                ),
+                Text(
+                  _isCheckedIn ? '已检录' : '未检录',
+                  style: TextStyle(
+                    color: _isCheckedIn ? Colors.green : Colors.orange,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // 名次
+            TextFormField(
+              controller: _rankController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: '名次',
+                hintText: '请输入名次（留空表示未评分）',
+                prefixIcon: Icon(Icons.emoji_events),
+                helperText: '输入整数，如 1、2、3',
+              ),
+              validator: (value) {
+                if (value != null && value.trim().isNotEmpty) {
+                  final parsed = int.tryParse(value.trim());
+                  if (parsed == null || parsed < 1) {
+                    return '请输入有效的名次（正整数）';
+                  }
+                }
+                return null;
+              },
+              enabled: !_isSaving,
+            ),
+
+            // 照片路径（只读显示）
+            if (widget.participant.evidenceImg != null &&
+                widget.participant.evidenceImg!.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Icon(Icons.photo, color: Colors.grey),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '照片: ${widget.participant.evidenceImg!.split('/').last}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ],
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value, Color color) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 80,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[700],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: color.withValues(alpha: 0.3)),
-            ),
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 14,
-                color: color.withValues(alpha: 0.9),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

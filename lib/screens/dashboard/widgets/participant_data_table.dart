@@ -123,7 +123,9 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
               ),
               const SizedBox(height: 6),
               // 第二行：统计信息（可点击筛选）
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
                 children: [
                   _FilterBadge(
                     label: '总',
@@ -132,7 +134,6 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
                     isSelected: _filterCheckStatus == null,
                     onTap: () => setState(() => _filterCheckStatus = null),
                   ),
-                  const SizedBox(width: 8),
                   _FilterBadge(
                     label: '已检录',
                     value: provider.checkedInCount,
@@ -142,7 +143,6 @@ class _ParticipantDataTableState extends State<ParticipantDataTable> {
                       _filterCheckStatus = _filterCheckStatus == 1 ? null : 1;
                     }),
                   ),
-                  const SizedBox(width: 8),
                   _FilterBadge(
                     label: '未检录',
                     value: provider.uncheckedCount,

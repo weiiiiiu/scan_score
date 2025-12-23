@@ -25,6 +25,7 @@ dependencies:
   intl: ^0.20.2
   share_plus: ^10.0.3
   archive: ^4.0.7
+  crypto: ^3.0.3
 
   # 用于获取安卓版本号
   device_info_plus: ^10.1.0

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/participant_provider.dart';
+import '../services/activation_service.dart';
 import '../config/routes.dart';
 
 /// 启动页面
@@ -12,6 +13,8 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  final ActivationService _activationService = ActivationService();
+
   @override
   void initState() {
     super.initState();
@@ -24,7 +27,18 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!mounted) return;
 
-    // 同时执行：加载数据 和 最少等待 0.5 秒
+    // 检查激活状态
+    final isActivated = await _activationService.isActivated();
+
+    if (!mounted) return;
+
+    if (!isActivated) {
+      // 未激活，跳转到激活页面
+      Navigator.of(context).pushReplacementNamed(AppRoutes.activation);
+      return;
+    }
+
+    // 已激活，加载数据
     final provider = context.read<ParticipantProvider>();
     await Future.wait([
       provider.loadData(),

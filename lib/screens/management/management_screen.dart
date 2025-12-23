@@ -4,6 +4,7 @@ import '../../providers/participant_provider.dart';
 import '../../models/participant.dart';
 import '../../services/storage_service.dart';
 import '../../services/file_service.dart';
+import '../../services/activation_service.dart';
 import '../../config/routes.dart';
 
 /// 管理界面
@@ -17,6 +18,7 @@ class ManagementScreen extends StatefulWidget {
 class _ManagementScreenState extends State<ManagementScreen> {
   final StorageService _storageService = StorageService();
   final FileService _fileService = FileService();
+  final ActivationService _activationService = ActivationService();
 
   String _searchQuery = '';
   String _filterGroup = '全部';
@@ -96,6 +98,11 @@ class _ManagementScreenState extends State<ManagementScreen> {
               const PopupMenuItem(
                 value: 'clear_all_data',
                 child: Text('清除所有数据'),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'deactivate',
+                child: Text('解绑激活', style: TextStyle(color: Colors.red)),
               ),
             ],
           ),
@@ -312,6 +319,13 @@ class _ManagementScreenState extends State<ManagementScreen> {
           () => _clearAllData(),
         );
         break;
+      case 'deactivate':
+        _showConfirmDialog(
+          '确定解绑激活吗？',
+          '解绑后需要重新选择激活文件才能使用。',
+          () => _deactivate(),
+        );
+        break;
     }
   }
 
@@ -430,6 +444,31 @@ class _ManagementScreenState extends State<ManagementScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('操作失败: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _deactivate() async {
+    try {
+      await _activationService.deactivate();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('已解绑激活'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        // 跳转到激活页面
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          AppRoutes.activation,
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('解绑失败: $e'), backgroundColor: Colors.red),
         );
       }
     }

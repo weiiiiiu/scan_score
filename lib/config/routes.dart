@@ -6,6 +6,7 @@ import '../screens/scoring/scoring_screen.dart';
 import '../screens/management/management_screen.dart';
 import '../screens/export/export_screen.dart';
 import '../screens/participant_detail/participant_detail_screen.dart';
+import '../screens/activation/activation_screen.dart';
 import '../models/participant.dart';
 
 /// 应用路由配置
@@ -17,6 +18,7 @@ class AppRoutes {
   static const String scoring = '/scoring';
   static const String management = '/management';
   static const String export = '/export';
+  static const String activation = '/activation';
 
   /// 生成路由表
   static Map<String, WidgetBuilder> getRoutes() {
@@ -27,6 +29,7 @@ class AppRoutes {
       scoring: (context) => const ScoringScreen(),
       management: (context) => const ManagementScreen(),
       export: (context) => const ExportScreen(),
+      activation: (context) => const ActivationScreen(),
     };
   }
 
