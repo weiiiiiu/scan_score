@@ -307,6 +307,94 @@ class ParticipantProvider extends ChangeNotifier {
     }
   }
 
+  /// 更新名次并自动调整其他选手名次
+  ///
+  /// 规则：
+  /// - 名次后移（如1→2）：原名次与新名次之间的选手名次前移
+  /// - 名次前移（如4→2）：原名次与新名次之间的选手名次后移
+  /// - 新增名次：现有该名次及之后的选手名次后移
+  /// - 清除名次：原名次之后的选手名次前移
+  Future<void> updateRank(Participant participant, int? newRank) async {
+    try {
+      final oldRank = participant.score?.toInt();
+
+      // 如果名次没变，直接返回
+      if (oldRank == newRank) return;
+
+      // 获取所有已评分的选手（排除当前选手）
+      final rankedParticipants = _participants
+          .where((p) => p.score != null && p.id != participant.id)
+          .toList();
+
+      // 收集需要更新的选手
+      final updates = <Participant>[];
+
+      if (oldRank == null && newRank != null) {
+        // 情况1：新增名次 - 该名次及之后的选手都往后移一位
+        for (final p in rankedParticipants) {
+          final rank = p.score!.toInt();
+          if (rank >= newRank) {
+            updates.add(p.copyWith(score: (rank + 1).toDouble()));
+          }
+        }
+      } else if (oldRank != null && newRank == null) {
+        // 情况2：清除名次 - 原名次之后的选手都往前移一位
+        for (final p in rankedParticipants) {
+          final rank = p.score!.toInt();
+          if (rank > oldRank) {
+            updates.add(p.copyWith(score: (rank - 1).toDouble()));
+          }
+        }
+      } else if (oldRank != null && newRank != null) {
+        if (newRank > oldRank) {
+          // 情况3：名次后移（如1→2, 4→10）
+          // 原名次+1 到 新名次 之间的选手往前移一位
+          for (final p in rankedParticipants) {
+            final rank = p.score!.toInt();
+            if (rank > oldRank && rank <= newRank) {
+              updates.add(p.copyWith(score: (rank - 1).toDouble()));
+            }
+          }
+        } else {
+          // 情况4：名次前移（如4→2）
+          // 新名次 到 原名次-1 之间的选手往后移一位
+          for (final p in rankedParticipants) {
+            final rank = p.score!.toInt();
+            if (rank >= newRank && rank < oldRank) {
+              updates.add(p.copyWith(score: (rank + 1).toDouble()));
+            }
+          }
+        }
+      }
+
+      // 批量更新受影响的选手
+      for (final p in updates) {
+        final index = _participants.indexWhere((x) => x.id == p.id);
+        if (index != -1) {
+          _participants[index] = p;
+        }
+      }
+
+      // 更新当前选手
+      final updatedParticipant = participant.copyWith(
+        score: newRank?.toDouble(),
+      );
+      final index = _participants.indexWhere((p) => p.id == participant.id);
+      if (index != -1) {
+        _participants[index] = updatedParticipant;
+      }
+
+      // 保存到 CSV
+      await _csvService.saveWorkingCsv(_participants);
+      notifyListeners();
+    } catch (e) {
+      _error = '更新名次失败: $e';
+      debugPrint(_error);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   /// 检查参赛证号是否重复（排除指定ID的参赛者）
   bool isMemberCodeDuplicate(String code, int excludeId) {
     return _participants.any((p) => p.memberCode == code && p.id != excludeId);

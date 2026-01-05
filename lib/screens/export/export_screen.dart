@@ -245,7 +245,7 @@ class _ExportScreenState extends State<ExportScreen> {
               '作品码: ${info['workCode']}',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
-            subtitle: Text('分数: ${info['scoreDisplay']}'),
+            subtitle: Text('名次: ${info['scoreDisplay']}'),
             trailing: Text(
               info['fileName'],
               style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
@@ -282,7 +282,7 @@ class _ExportScreenState extends State<ExportScreen> {
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
-                  '分数: ${info['scoreDisplay']}',
+                  '名次: ${info['scoreDisplay']}',
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,

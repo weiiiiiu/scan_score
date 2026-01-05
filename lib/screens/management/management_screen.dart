@@ -257,7 +257,7 @@ class _ManagementScreenState extends State<ManagementScreen> {
                     participant.workCode!.isNotEmpty)
                   _buildStatusChip('作品码: ${participant.workCode}', Colors.blue),
                 if (hasScore)
-                  _buildStatusChip('分数: ${participant.score}', Colors.purple),
+                  _buildStatusChip('名次: ${participant.score}', Colors.purple),
               ],
             ),
           ],
@@ -454,16 +454,12 @@ class _ManagementScreenState extends State<ManagementScreen> {
       await _activationService.deactivate();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('已解绑激活'),
-            backgroundColor: Colors.green,
-          ),
+          const SnackBar(content: Text('已解绑激活'), backgroundColor: Colors.green),
         );
         // 跳转到激活页面
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          AppRoutes.activation,
-          (route) => false,
-        );
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil(AppRoutes.activation, (route) => false);
       }
     } catch (e) {
       if (mounted) {

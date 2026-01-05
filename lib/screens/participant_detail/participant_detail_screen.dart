@@ -117,11 +117,15 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
 
     try {
       final rankText = _rankController.text.trim();
-      double? rank;
+      int? newRank;
       if (rankText.isNotEmpty) {
-        rank = double.tryParse(rankText);
+        newRank = int.tryParse(rankText);
       }
 
+      final oldRank = widget.participant.score?.toInt();
+      final rankChanged = oldRank != newRank;
+
+      // 先更新其他字段（不包括名次）
       final updated = widget.participant.copyWith(
         memberCode: newMemberCode,
         name: _nameController.text.trim(),
@@ -139,10 +143,20 @@ class _ParticipantDetailScreenState extends State<ParticipantDetailScreen> {
             : _instructorController.text.trim(),
         workCode: newWorkCode.isEmpty ? null : newWorkCode,
         checkStatus: _isCheckedIn ? 1 : 0,
-        score: rank,
+        score: widget.participant.score, // 保持原名次，由 updateRank 处理
       );
 
+      // 先更新基本信息
       await provider.updateParticipant(updated);
+
+      // 如果名次发生变化，调用名次调整方法
+      if (rankChanged) {
+        // 重新获取更新后的参赛者
+        final currentParticipant = provider.findById(widget.participant.id);
+        if (currentParticipant != null) {
+          await provider.updateRank(currentParticipant, newRank);
+        }
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
