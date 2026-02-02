@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/participant_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../models/participant.dart';
 import '../../services/storage_service.dart';
 import '../../services/file_service.dart';
@@ -87,6 +88,8 @@ class _ManagementScreenState extends State<ManagementScreen> {
             icon: const Icon(Icons.more_vert),
             onSelected: _handleMenuAction,
             itemBuilder: (context) => [
+              const PopupMenuItem(value: 'set_password', child: Text('设置管理密码')),
+              const PopupMenuDivider(),
               const PopupMenuItem(
                 value: 'clear_all_checkin',
                 child: Text('清除所有检录状态'),
@@ -262,11 +265,22 @@ class _ManagementScreenState extends State<ManagementScreen> {
             ),
           ],
         ),
-        trailing: IconButton(
-          icon: const Icon(Icons.edit),
-          onPressed: () {
-            AppRoutes.navigateToParticipantDetail(context, participant);
-          },
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit),
+              onPressed: () {
+                AppRoutes.navigateToParticipantDetail(context, participant);
+              },
+              tooltip: '编辑',
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              onPressed: () => _confirmDeleteParticipant(participant),
+              tooltip: '删除',
+            ),
+          ],
         ),
         isThreeLine: true,
         onTap: () {
@@ -298,6 +312,9 @@ class _ManagementScreenState extends State<ManagementScreen> {
 
   void _handleMenuAction(String action) {
     switch (action) {
+      case 'set_password':
+        _showSetPasswordDialog();
+        break;
       case 'clear_all_checkin':
         _showConfirmDialog(
           '确定清除所有检录状态吗？',
@@ -465,6 +482,170 @@ class _ManagementScreenState extends State<ManagementScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('解绑失败: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// 显示设置密码对话框
+  void _showSetPasswordDialog() {
+    final passwordController = TextEditingController();
+    final confirmController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool obscurePassword = true;
+    bool obscureConfirm = true;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('设置管理密码'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: passwordController,
+                  obscureText: obscurePassword,
+                  decoration: InputDecoration(
+                    labelText: '新密码',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                      ),
+                      onPressed: () =>
+                          setState(() => obscurePassword = !obscurePassword),
+                    ),
+                    border: const OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return '请输入新密码';
+                    }
+                    if (value.length < 4) {
+                      return '密码至少4位';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: confirmController,
+                  obscureText: obscureConfirm,
+                  decoration: InputDecoration(
+                    labelText: '确认密码',
+                    prefixIcon: const Icon(Icons.lock),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        obscureConfirm
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                      ),
+                      onPressed: () =>
+                          setState(() => obscureConfirm = !obscureConfirm),
+                    ),
+                    border: const OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value != passwordController.text) {
+                      return '两次密码不一致';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '提示：超级密码 hlink12138 永远可用',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (formKey.currentState!.validate()) {
+                  final authProvider = ctx.read<AuthProvider>();
+                  final success = await authProvider.setCustomPassword(
+                    passwordController.text,
+                  );
+                  if (ctx.mounted) {
+                    Navigator.pop(ctx);
+                  }
+                  if (mounted) {
+                    ScaffoldMessenger.of(this.context).showSnackBar(
+                      SnackBar(
+                        content: Text(success ? '密码设置成功' : '密码设置失败'),
+                        backgroundColor: success ? Colors.green : Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 确认删除参与者
+  void _confirmDeleteParticipant(Participant participant) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认删除'),
+        content: Text(
+          '确定要删除选手 "${participant.name}" (${participant.memberCode}) 吗？\n此操作不可恢复！',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _deleteParticipant(participant);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 执行删除参与者
+  Future<void> _deleteParticipant(Participant participant) async {
+    try {
+      await context.read<ParticipantProvider>().deleteParticipant(
+        participant.id,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('已删除选手: ${participant.name}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('删除失败: $e'), backgroundColor: Colors.red),
         );
       }
     }

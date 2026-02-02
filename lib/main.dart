@@ -19,11 +19,16 @@ void main() async {
   final fileService = FileService();
   final csvService = CsvService(storageService, fileService);
 
+  // 初始化 AuthProvider（加载自定义密码）
+  final authProvider = AuthProvider();
+  await authProvider.init();
+
   runApp(
     MyApp(
       storageService: storageService,
       fileService: fileService,
       csvService: csvService,
+      authProvider: authProvider,
     ),
   );
 }
@@ -32,20 +37,22 @@ class MyApp extends StatelessWidget {
   final StorageService storageService;
   final FileService fileService;
   final CsvService csvService;
+  final AuthProvider authProvider;
 
   const MyApp({
     super.key,
     required this.storageService,
     required this.fileService,
     required this.csvService,
+    required this.authProvider,
   });
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        // 身份验证 Provider
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        // 身份验证 Provider（已初始化）
+        ChangeNotifierProvider.value(value: authProvider),
 
         // 参赛者数据 Provider
         ChangeNotifierProvider(

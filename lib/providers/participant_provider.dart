@@ -403,9 +403,39 @@ class ParticipantProvider extends ChangeNotifier {
   /// 检查作品码是否重复（排除指定ID的参赛者）
   bool isWorkCodeDuplicate(String code, int excludeId) {
     if (code.isEmpty) return false;
-    return _participants.any(
-      (p) => p.workCode == code && p.id != excludeId,
-    );
+    return _participants.any((p) => p.workCode == code && p.id != excludeId);
+  }
+
+  /// 删除单个参赛者
+  Future<void> deleteParticipant(int id) async {
+    try {
+      final participant = findById(id);
+      if (participant == null) {
+        throw Exception('参赛者不存在: ID $id');
+      }
+
+      // 如果有评分照片，先删除
+      if (participant.evidenceImg != null &&
+          participant.evidenceImg!.isNotEmpty) {
+        try {
+          await _fileService.deleteFile(participant.evidenceImg!);
+        } catch (e) {
+          debugPrint('删除照片失败: $e');
+        }
+      }
+
+      _participants = _participants.where((p) => p.id != id).toList();
+
+      // 保存到 CSV
+      await _csvService.saveWorkingCsv(_participants);
+
+      notifyListeners();
+    } catch (e) {
+      _error = '删除参赛者失败: $e';
+      debugPrint(_error);
+      notifyListeners();
+      rethrow;
+    }
   }
 
   // ===== 辅助方法 =====
