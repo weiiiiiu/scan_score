@@ -3,6 +3,7 @@ import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 import 'package:provider/provider.dart';
 import '../../config/routes.dart';
 import '../../providers/participant_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../widgets/auth_dialog.dart';
 import '../../widgets/loading_overlay.dart';
 import 'widgets/participant_data_table.dart';
@@ -203,8 +204,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ),
         onChanged: (value) {
-          // 检查是否输入了admin，进入管理页面
-          if (value.toLowerCase() == 'hlink12138') {
+          // 检查是否输入了管理密码，进入管理页面
+          final authProvider = context.read<AuthProvider>();
+          if (authProvider.verifyPassword(value)) {
             _searchController.clear();
             setState(() {
               _searchQuery = '';

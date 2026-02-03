@@ -17,13 +17,19 @@ class AuthProvider extends ChangeNotifier {
   /// 初始化，加载保存的自定义密码
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
-    _customPassword = _prefs?.getString(_customPasswordKey) ?? _superPassword;
+    final savedPassword = _prefs?.getString(_customPasswordKey);
+    debugPrint('AuthProvider.init: savedPassword = "$savedPassword"');
+    _customPassword = savedPassword ?? _superPassword;
+    debugPrint('AuthProvider.init: _customPassword = "$_customPassword"');
     notifyListeners();
   }
 
   /// 验证密码（超级密码或自定义密码都可以通过）
   bool verifyPassword(String password) {
-    return password == _superPassword || password == _customPassword;
+    debugPrint('verifyPassword: input="$password", super="$_superPassword", custom="$_customPassword"');
+    final result = password == _superPassword || password == _customPassword;
+    debugPrint('verifyPassword: result=$result');
+    return result;
   }
 
   /// 获取当前自定义密码
@@ -31,15 +37,18 @@ class AuthProvider extends ChangeNotifier {
 
   /// 设置自定义密码
   Future<bool> setCustomPassword(String newPassword) async {
+    debugPrint('setCustomPassword: newPassword="$newPassword"');
     if (newPassword.isEmpty) {
       return false;
     }
 
     _prefs ??= await SharedPreferences.getInstance();
     final success = await _prefs!.setString(_customPasswordKey, newPassword);
+    debugPrint('setCustomPassword: save success=$success');
 
     if (success) {
       _customPassword = newPassword;
+      debugPrint('setCustomPassword: _customPassword updated to "$_customPassword"');
       notifyListeners();
     }
 

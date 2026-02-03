@@ -557,11 +557,6 @@ class _ManagementScreenState extends State<ManagementScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '提示：超级密码 hlink12138 永远可用',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
               ],
             ),
           ),
