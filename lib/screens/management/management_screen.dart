@@ -249,18 +249,19 @@ class _ManagementScreenState extends State<ManagementScreen> {
             Text(
               '编号: ${participant.memberCode} | 组别: ${participant.group ?? "未分组"}',
             ),
-            Row(
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
               children: [
                 _buildStatusChip(
                   isCheckedIn ? '已检录' : '未检录',
                   isCheckedIn ? Colors.green : Colors.orange,
                 ),
-                const SizedBox(width: 4),
                 if (participant.workCode != null &&
                     participant.workCode!.isNotEmpty)
                   _buildStatusChip('作品码: ${participant.workCode}', Colors.blue),
                 if (hasScore)
-                  _buildStatusChip('名次: ${participant.score}', Colors.purple),
+                  _buildStatusChip('名次: ${participant.score!.toInt()}', Colors.purple),
               ],
             ),
           ],
@@ -293,7 +294,6 @@ class _ManagementScreenState extends State<ManagementScreen> {
   Widget _buildStatusChip(String label, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      margin: const EdgeInsets.only(top: 4),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
